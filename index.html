@@ -90,6 +90,51 @@
   footer button:active { background: var(--line); }
   footer button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
 
+  header { align-items: center; }
+  header .hint { flex-basis: 100%; }
+  #btnSettings {
+    font: 600 0.75rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 14px; cursor: pointer;
+  }
+  #btnSettings:focus-visible, #settings button:focus-visible, #settings input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  /* ---------- Panel de ajustes ---------- */
+  #settings {
+    position: fixed; inset: 0; z-index: 10;
+    background: var(--bg);
+    overflow-y: auto;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 24px);
+    -webkit-user-select: text; user-select: text;
+  }
+  .sheet { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .sheet-head h2 { margin: 0; font-family: var(--font-display); font-weight: 900; font-size: 1.6rem; letter-spacing: 0.08em; text-transform: uppercase; }
+  .sheet h3 { margin: 0 0 4px; font-family: var(--font-display); font-weight: 700; font-size: 1.15rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--signal); }
+  .sheet p.note { margin: 0; font-size: 0.8rem; color: var(--muted); line-height: 1.5; }
+  .sheet button {
+    font: 600 0.75rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 999px;
+    padding: 9px 14px; cursor: pointer;
+  }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .presets button[aria-pressed="true"] { background: var(--signal); color: var(--bg); border-color: var(--signal); }
+  .field { display: grid; gap: 8px; margin-top: 16px; }
+  .field label { display: flex; justify-content: space-between; font-size: 0.85rem; }
+  .field output { color: var(--signal); font-variant-numeric: tabular-nums; }
+  .field input[type="range"] { width: 100%; accent-color: var(--signal); }
+
+  .chart { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 6px; margin-top: 12px; }
+  .chart .item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
+  }
+  .chart .ch { font-family: var(--font-display); font-weight: 900; font-size: 1.5rem; width: 1.1em; text-align: center; }
+  .chart .item { gap: 8px; padding: 8px; }
+  .chart .code { height: auto; gap: 3px; flex-wrap: nowrap; }
+  .chart .dot { width: 5px; height: 5px; flex: none; }
+  .chart .dash { width: 13px; height: 5px; flex: none; }
+
   @keyframes pop { from { transform: translateY(6px) scale(0.92); opacity: 0; } to { transform: none; opacity: 1; } }
   @media (prefers-reduced-motion: reduce) { .cell { animation: none; } #pad { transition: none; } }
 </style>
@@ -98,6 +143,7 @@
 <div id="pad" aria-label="Tecla de telégrafo: toca para punto, mantén para raya">
   <header>
     <span class="brand">Telégrafo</span>
+    <button type="button" id="btnSettings">Ajustes</button>
     <span class="hint">Toque corto = punto · Mantener = raya</span>
   </header>
 
@@ -117,6 +163,45 @@
   </footer>
 </div>
 
+<section id="settings" hidden aria-label="Ajustes">
+  <div class="sheet">
+    <div class="sheet-head">
+      <h2>Ajustes</h2>
+      <button type="button" id="btnClose">Cerrar</button>
+    </div>
+
+    <div>
+      <h3>Tiempo</h3>
+      <p class="note">Si escribes rápido, baja los dos tiempos. Si se te cortan las rayas o las letras se cierran antes de tiempo, súbelos.</p>
+      <div class="presets" id="presets">
+        <button type="button" data-dash="300" data-gap="1300">Lenta</button>
+        <button type="button" data-dash="220" data-gap="900">Normal</button>
+        <button type="button" data-dash="160" data-gap="550">Rápida</button>
+        <button type="button" data-dash="120" data-gap="350">Experta</button>
+      </div>
+      <div class="field">
+        <label for="dashRange">Mantener para raya <output id="dashOut"></output></label>
+        <input type="range" id="dashRange" min="80" max="500" step="10">
+      </div>
+      <div class="field">
+        <label for="gapRange">Pausa para cerrar la letra <output id="gapOut"></output></label>
+        <input type="range" id="gapRange" min="250" max="2000" step="50">
+      </div>
+    </div>
+
+    <div>
+      <h3>Manual · Abecedario</h3>
+      <p class="note">Punto = toque corto. Raya = mantener presionado.</p>
+      <div class="chart" id="chartLetters"></div>
+    </div>
+
+    <div>
+      <h3>Manual · Números</h3>
+      <div class="chart" id="chartNumbers"></div>
+    </div>
+  </div>
+</section>
+
 <script>
 (() => {
   // Código Morse internacional, con Ñ y algunas letras acentuadas del español.
@@ -133,10 +218,14 @@
   };
   const DECODE = Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]));
 
-  // Tiempos (ms)
-  const DASH_MS = 220;    // presionar más que esto = raya
-  const LETTER_MS = 900;  // silencio que cierra la letra
+  // Tiempos (ms), ajustables desde Ajustes
+  let DASH_MS = 220;    // presionar más que esto = raya
+  let LETTER_MS = 900;  // silencio que cierra la letra
   const TONE_HZ = 650;
+  try {
+    const saved = JSON.parse(localStorage.getItem('morse-tiempos') || 'null');
+    if (saved) { DASH_MS = saved.dash || DASH_MS; LETTER_MS = saved.gap || LETTER_MS; }
+  } catch (e) {}
 
   const pad = document.getElementById('pad');
   const wordEl = document.getElementById('word');
@@ -287,6 +376,7 @@
 
   // Teclado: barra espaciadora o Enter funcionan como la tecla del telégrafo
   window.addEventListener('keydown', e => {
+    if (!settingsEl.hidden) { if (e.code === 'Escape') closeSettings(); return; }
     if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !e.target.closest('button')) {
       e.preventDefault(); press();
     } else if (e.code === 'Backspace') {
@@ -317,6 +407,53 @@
     renderCurrent(); renderWord();
   });
 
+  // ---------- Ajustes ----------
+  const settingsEl = document.getElementById('settings');
+  const dashRange = document.getElementById('dashRange');
+  const gapRange = document.getElementById('gapRange');
+  const dashOut = document.getElementById('dashOut');
+  const gapOut = document.getElementById('gapOut');
+  const presetBtns = [...document.querySelectorAll('#presets button')];
+
+  function syncTimes() {
+    dashRange.value = DASH_MS;
+    gapRange.value = LETTER_MS;
+    dashOut.textContent = (DASH_MS / 1000).toFixed(2) + ' s';
+    gapOut.textContent = (LETTER_MS / 1000).toFixed(2) + ' s';
+    presetBtns.forEach(b => b.setAttribute('aria-pressed',
+      String(+b.dataset.dash === DASH_MS && +b.dataset.gap === LETTER_MS)));
+    try { localStorage.setItem('morse-tiempos', JSON.stringify({ dash: DASH_MS, gap: LETTER_MS })); } catch (e) {}
+  }
+  presetBtns.forEach(b => b.addEventListener('click', () => {
+    DASH_MS = +b.dataset.dash; LETTER_MS = +b.dataset.gap; syncTimes();
+  }));
+  dashRange.addEventListener('input', () => { DASH_MS = +dashRange.value; syncTimes(); });
+  gapRange.addEventListener('input', () => { LETTER_MS = +gapRange.value; syncTimes(); });
+
+  function fillChart(el, chars) {
+    for (const ch of chars) {
+      const item = document.createElement('div');
+      item.className = 'item';
+      const c = document.createElement('span');
+      c.className = 'ch';
+      c.textContent = ch;
+      item.append(c, codeNode(MORSE[ch]));
+      el.appendChild(item);
+    }
+  }
+  fillChart(document.getElementById('chartLetters'), 'ABCDEFGHIJKLMNÑOPQRSTUVWXYZ');
+  fillChart(document.getElementById('chartNumbers'), '1234567890');
+
+  function openSettings() {
+    commitLetter();
+    settingsEl.hidden = false;
+    settingsEl.scrollTop = 0;
+  }
+  function closeSettings() { settingsEl.hidden = true; }
+  document.getElementById('btnSettings').addEventListener('click', openSettings);
+  document.getElementById('btnClose').addEventListener('click', closeSettings);
+
+  syncTimes();
   renderWord();
   renderCurrent();
 })();
