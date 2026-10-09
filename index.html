@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0E3540">
+<title>Telégrafo Morse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+  /* Una sola superficie de color: toda la pantalla es la tecla del telégrafo. Palabra al centro, controles discretos abajo. */
+  :root {
+    --bg: #0E3540;        /* fondo único */
+    --bg-press: #12414E;  /* el mismo tono, apenas más claro al presionar */
+    --ink: #EDF3F1;       /* letras */
+    --muted: #8FB1B3;     /* textos secundarios */
+    --signal: #FFC15E;    /* señal en curso */
+    --line: rgba(237, 243, 241, 0.18);
+    --font-display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: dark;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #pad {
+    position: fixed; inset: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+    background: var(--bg);
+    touch-action: none;
+    cursor: pointer;
+    transition: background-color 60ms linear;
+  }
+  #pad.pressed { background: var(--bg-press); }
+
+  header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .brand { font-family: var(--font-display); font-weight: 900; font-size: 1.25rem; letter-spacing: 0.12em; text-transform: uppercase; }
+  .hint { font-size: 0.75rem; color: var(--muted); letter-spacing: 0.04em; }
+
+  main {
+    min-height: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 28px;
+    overflow-y: auto;
+  }
+  #word {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+    gap: 14px 10px;
+    max-width: 100%;
+  }
+  .empty { color: var(--muted); font-size: 0.9rem; text-align: center; line-height: 1.6; max-width: 28ch; }
+  .cell { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 2.2rem; animation: pop 220ms ease-out; }
+  .cell.space { min-width: 1.4rem; }
+  .letter {
+    font-family: var(--font-display); font-weight: 900;
+    font-size: clamp(3rem, 15vw, 6.5rem); line-height: 0.9;
+  }
+  .letter.unknown { color: var(--muted); }
+  .code { display: flex; gap: 4px; align-items: center; height: 10px; }
+  .dot, .dash { display: inline-block; height: 7px; border-radius: 4px; background: var(--ink); opacity: 0.85; }
+  .dot { width: 7px; }
+  .dash { width: 20px; }
+
+  #current { display: flex; flex-direction: column; align-items: center; gap: 10px; min-height: 64px; }
+  #current .code { height: 16px; gap: 7px; }
+  #current .dot, #current .dash { background: var(--signal); opacity: 1; height: 12px; border-radius: 6px; }
+  #current .dot { width: 12px; }
+  #current .dash { width: 36px; }
+  #preview { font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; color: var(--signal); min-height: 1.6rem; }
+  #timer { width: 120px; height: 2px; background: var(--line); border-radius: 1px; overflow: hidden; }
+  #timer span { display: block; height: 100%; width: 0; background: var(--signal); }
+
+  footer { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  footer button {
+    font: 600 0.8rem var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 10px 16px; cursor: pointer;
+  }
+  footer button:active { background: var(--line); }
+  footer button:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  @keyframes pop { from { transform: translateY(6px) scale(0.92); opacity: 0; } to { transform: none; opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .cell { animation: none; } #pad { transition: none; } }
+</style>
+</head>
+<body>
+<div id="pad" aria-label="Tecla de telégrafo: toca para punto, mantén para raya">
+  <header>
+    <span class="brand">Telégrafo</span>
+    <span class="hint">Toque corto = punto · Mantener = raya</span>
+  </header>
+
+  <main>
+    <div id="word" aria-live="polite"></div>
+    <div id="current">
+      <div class="code" id="currentCode"></div>
+      <div id="preview"></div>
+      <div id="timer"><span id="timerBar"></span></div>
+    </div>
+  </main>
+
+  <footer>
+    <button type="button" id="btnSpace">Espacio</button>
+    <button type="button" id="btnBack">Borrar letra</button>
+    <button type="button" id="btnClear">Limpiar</button>
+  </footer>
+</div>
+
+<script>
+(() => {
+  // Código Morse internacional, con Ñ y algunas letras acentuadas del español.
+  const MORSE = {
+    A: '.-', B: '-...', C: '-.-.', D: '-..', E: '.', F: '..-.', G: '--.', H: '....',
+    I: '..', J: '.---', K: '-.-', L: '.-..', M: '--', N: '-.', 'Ñ': '--.--', O: '---',
+    P: '.--.', Q: '--.-', R: '.-.', S: '...', T: '-', U: '..-', V: '...-', W: '.--',
+    X: '-..-', Y: '-.--', Z: '--..',
+    '0': '-----', '1': '.----', '2': '..---', '3': '...--', '4': '....-',
+    '5': '.....', '6': '-....', '7': '--...', '8': '---..', '9': '----.',
+    '.': '.-.-.-', ',': '--..--', '?': '..--..', '!': '-.-.--', '/': '-..-.',
+    '(': '-.--.', ')': '-.--.-', ':': '---...', '=': '-...-', '+': '.-.-.',
+    '-': '-....-', '"': '.-..-.', '@': '.--.-.', 'É': '..-..', 'Á': '.--.-'
+  };
+  const DECODE = Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]));
+
+  // Tiempos (ms)
+  const DASH_MS = 220;    // presionar más que esto = raya
+  const LETTER_MS = 900;  // silencio que cierra la letra
+  const TONE_HZ = 650;
+
+  const pad = document.getElementById('pad');
+  const wordEl = document.getElementById('word');
+  const currentCodeEl = document.getElementById('currentCode');
+  const previewEl = document.getElementById('preview');
+  const timerBar = document.getElementById('timerBar');
+
+  let letters = [];        // [{ char, code }]  char ' ' = espacio
+  let current = '';        // símbolos de la letra en curso
+  let pressStart = 0;
+  let pressing = false;
+  let letterTimer = null;
+
+  // ---------- Sonido ----------
+  let ctx = null, osc = null, gain = null;
+  function ensureAudio() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      ctx = new AC();
+      gain = ctx.createGain();
+      gain.gain.value = 0;
+      gain.connect(ctx.destination);
+      osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = TONE_HZ;
+      osc.connect(gain);
+      osc.start();
+    }
+    if (ctx.state === 'suspended') ctx.resume();
+  }
+  function toneOn() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setValueAtTime(gain.gain.value, t);
+    gain.gain.linearRampToValueAtTime(0.35, t + 0.008);
+  }
+  function toneOff() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setValueAtTime(gain.gain.value, t);
+    gain.gain.linearRampToValueAtTime(0, t + 0.012);
+  }
+
+  // ---------- Pintado ----------
+  function codeNode(code) {
+    const wrap = document.createElement('div');
+    wrap.className = 'code';
+    for (const s of code) {
+      const span = document.createElement('span');
+      span.className = s === '.' ? 'dot' : 'dash';
+      wrap.appendChild(span);
+    }
+    wrap.setAttribute('aria-label', code.replace(/\./g, 'punto ').replace(/-/g, 'raya '));
+    return wrap;
+  }
+
+  function renderWord() {
+    wordEl.replaceChildren();
+    if (!letters.length) {
+      const p = document.createElement('p');
+      p.className = 'empty';
+      p.textContent = 'Toca la pantalla para empezar. Ejemplo: · · ·  — — —  · · ·  es SOS';
+      wordEl.appendChild(p);
+      return;
+    }
+    letters.forEach((l, i) => {
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (l.char === ' ' ? ' space' : '');
+      if (i < letters.length - 1) cell.style.animation = 'none';
+      if (l.char !== ' ') {
+        const letter = document.createElement('div');
+        letter.className = 'letter' + (l.char === '?' && l.code !== MORSE['?'] ? ' unknown' : '');
+        letter.textContent = l.char;
+        cell.append(letter, codeNode(l.code));
+      }
+      wordEl.appendChild(cell);
+    });
+    wordEl.parentElement.scrollTop = wordEl.parentElement.scrollHeight;
+  }
+
+  function renderCurrent() {
+    currentCodeEl.replaceChildren(...codeNode(current).childNodes);
+    previewEl.textContent = current ? (DECODE[current] || '?') : '';
+  }
+
+  function startTimerBar() {
+    timerBar.style.transition = 'none';
+    timerBar.style.width = '0';
+    void timerBar.offsetWidth;
+    timerBar.style.transition = `width ${LETTER_MS}ms linear`;
+    timerBar.style.width = '100%';
+  }
+  function stopTimerBar() {
+    timerBar.style.transition = 'none';
+    timerBar.style.width = '0';
+  }
+
+  // ---------- Lógica ----------
+  function commitLetter() {
+    clearTimeout(letterTimer);
+    letterTimer = null;
+    stopTimerBar();
+    if (!current) return;
+    letters.push({ char: DECODE[current] || '?', code: current });
+    current = '';
+    renderCurrent();
+    renderWord();
+  }
+
+  function press() {
+    if (pressing) return;
+    pressing = true;
+    ensureAudio();
+    toneOn();
+    clearTimeout(letterTimer);
+    stopTimerBar();
+    pressStart = performance.now();
+    pad.classList.add('pressed');
+    if (navigator.vibrate) navigator.vibrate(400);
+  }
+
+  function release() {
+    if (!pressing) return;
+    pressing = false;
+    toneOff();
+    pad.classList.remove('pressed');
+    if (navigator.vibrate) navigator.vibrate(0);
+    const held = performance.now() - pressStart;
+    current += held >= DASH_MS ? '-' : '.';
+    if (current.length > 7) current = current.slice(-7);
+    renderCurrent();
+    letterTimer = setTimeout(commitLetter, LETTER_MS);
+    startTimerBar();
+  }
+
+  pad.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    e.preventDefault();
+    pad.setPointerCapture?.(e.pointerId);
+    press();
+  });
+  pad.addEventListener('pointerup', release);
+  pad.addEventListener('pointercancel', release);
+  pad.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Teclado: barra espaciadora o Enter funcionan como la tecla del telégrafo
+  window.addEventListener('keydown', e => {
+    if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat && !e.target.closest('button')) {
+      e.preventDefault(); press();
+    } else if (e.code === 'Backspace') {
+      e.preventDefault(); backspace();
+    }
+  });
+  window.addEventListener('keyup', e => {
+    if ((e.code === 'Space' || e.code === 'Enter') && !e.target.closest('button')) release();
+  });
+
+  function backspace() {
+    if (current) { current = ''; clearTimeout(letterTimer); stopTimerBar(); renderCurrent(); return; }
+    letters.pop();
+    renderWord();
+  }
+
+  document.getElementById('btnSpace').addEventListener('click', () => {
+    commitLetter();
+    if (letters.length && letters[letters.length - 1].char !== ' ') {
+      letters.push({ char: ' ', code: '' });
+      renderWord();
+    }
+  });
+  document.getElementById('btnBack').addEventListener('click', backspace);
+  document.getElementById('btnClear').addEventListener('click', () => {
+    current = ''; letters = [];
+    clearTimeout(letterTimer); stopTimerBar();
+    renderCurrent(); renderWord();
+  });
+
+  renderWord();
+  renderCurrent();
+})();
+</script>
+</body>
+</html>
