@@ -76,9 +76,9 @@ public final class CastFlow {
     }
 
     public static String methodLabel(String m) {
-        if (METHOD_PANEL.equals(m)) return "Botón «Transmitir» del panel rápido";
-        if (METHOD_HOME.equals(m)) return "Google Home (Chromecast / Google TV)";
-        return "Ajustes de Transmitir del celular";
+        if (METHOD_PANEL.equals(m)) return "Botón «Transmitir» del panel rápido (directo, sin WiFi)";
+        if (METHOD_HOME.equals(m)) return "Google Home (Chromecast: requiere la misma red WiFi)";
+        return "Ajustes de Transmitir del celular (directo, sin WiFi)";
     }
 
     public static boolean powerIfMissing(Context c) {

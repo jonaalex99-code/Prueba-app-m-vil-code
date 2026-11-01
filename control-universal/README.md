@@ -38,6 +38,8 @@ Configuración (una sola vez):
 
 Límites (de Android y de las TVs, no de la app):
 - Android no deja que una app inicie la proyección por sí sola; por eso se usa Accesibilidad para "tocar" el menú.
+- Proyección directa (Miracast / Wi-Fi Direct): **no necesita red WiFi ni router**. Solo el WiFi del
+  celular debe estar encendido (sin conectarse a nada); la app lo enciende/pide si está apagado.
 - La TV debe soportar proyección: Miracast / Screen Mirroring / Smart View (Samsung, LG, Hisense, TCL, Sony…)
   o Chromecast integrado (Google TV / Android TV). Miracast se conecta directo, sin necesidad de WiFi;
   Chromecast necesita que TV y celular estén en la misma red WiFi.

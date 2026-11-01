@@ -86,7 +86,9 @@ public class CastService extends AccessibilityService {
             CastFlow.stop();
             toast(name == null
                     ? "Toca el nombre de tu TV en la lista para que la app lo recuerde."
-                    : "No apareció «" + name + "». Revisa que la TV esté encendida y con la función de proyectar disponible.");
+                    : "No apareció «" + name + "». Revisa que la TV esté encendida. Algunas TVs necesitan abrir "
+                            + "«Screen Mirroring / Duplicar pantalla» en la TV. Si tu TV solo tiene Chromecast, "
+                            + "necesita estar en la misma red WiFi que el celular.");
             return;
         }
 

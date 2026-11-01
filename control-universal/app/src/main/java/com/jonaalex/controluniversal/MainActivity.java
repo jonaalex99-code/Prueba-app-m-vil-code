@@ -76,6 +76,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
     private String lastText = "";
     private boolean suppressWatcher;
     private boolean pendingCastAfterSetup;
+    private boolean pendingCastAfterWifi;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -132,6 +133,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
             pendingCastAfterSetup = false;
             onCast();
         }
+        onResumeCastIfReady();
     }
 
     @Override
@@ -1038,11 +1040,55 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
             showCastSetup();
             return;
         }
+        // La proyección directa (Miracast / Wi-Fi Direct) necesita el WiFi del celular ENCENDIDO,
+        // pero no conectado a ninguna red. Si está apagado, lo encendemos primero.
+        if (!wifiRadioOn()) {
+            pendingCastAfterWifi = true;
+            if (Build.VERSION.SDK_INT >= 29) {
+                toast("Enciende el WiFi (no hace falta conectarse a ninguna red)");
+                try {
+                    startActivity(new Intent(Settings.Panel.ACTION_WIFI));
+                } catch (Exception e) {
+                    startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+                }
+            } else {
+                enableWifiLegacy();
+                handler.postDelayed(this::onResumeCastIfReady, 1500);
+            }
+            return;
+        }
         if (CastFlow.tvName(this) == null) {
             toast("Toca el nombre de tu TV en la lista. La app lo recordará para la próxima vez.");
         }
         if (!CastFlow.start(this, true)) {
             toast("No encontré el menú de Transmitir. Ábrelo en el panel rápido del celular.");
+        }
+    }
+
+    private void onResumeCastIfReady() {
+        if (pendingCastAfterWifi && wifiRadioOn()) {
+            pendingCastAfterWifi = false;
+            handler.postDelayed(this::onCast, 600);
+        }
+    }
+
+    private boolean wifiRadioOn() {
+        try {
+            android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext()
+                    .getSystemService(WIFI_SERVICE);
+            return wm == null || wm.isWifiEnabled();
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private void enableWifiLegacy() {
+        try {
+            android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext()
+                    .getSystemService(WIFI_SERVICE);
+            if (wm != null) wm.setWifiEnabled(true);
+        } catch (Exception ignored) {
         }
     }
 

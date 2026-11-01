@@ -11,6 +11,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
+    <!-- Proyección directa: comprobar / encender el WiFi del celular (sin conectarse a una red) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
     <!-- Apps y pantallas que se abren para proyectar (visibilidad de paquetes, Android 11+) -->
     <queries>
         <package android:name="com.google.android.apps.chromecast.app" />
