@@ -72,6 +72,15 @@ Emparejar (una sola vez): toca **Bluetooth** (arriba a la derecha) › *Empareja
 | Arrastrar con dos dedos / franja derecha | Desplazar (rueda) |
 | Mantener presionado y mover | Arrastrar |
 
+**Calibrar el mouse**: en la sección Mouse toca el botón azul de ajustes. Se abre un panel que aplica
+los cambios al instante mientras pruebas en el panel táctil:
+
+- *Velocidad* (0.5x–12x) y *Aceleración* (0 = lineal, hasta 3x al deslizar rápido).
+- *Intervalo entre paquetes* (4–50 ms): más bajo = más fluido; si aparecen muchos «fallidos», súbelo.
+- *Movimiento máximo por paquete* (10–127).
+- Estadísticas en vivo (paquetes enviados / fallidos por segundo) y un *Asistente*: deslizas de lado a
+  lado y eliges hasta dónde llegó el cursor (Casi nada / La mitad / Justo / Se pasó).
+
 Con Bluetooth conectado, flechas, OK, Atrás, Inicio, Menú y volumen se envían por Bluetooth (no hace
 falta apuntar). Encender, Entrada, Canales y números siguen por infrarrojo.
 

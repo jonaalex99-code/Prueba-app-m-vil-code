@@ -55,6 +55,7 @@ public class TouchpadView extends View {
     private PointerListener pointer;
     private boolean pointerMode;
     private float sensitivity = 1.0f;
+    private float accelFactor = 1.0f;
 
     private final float density;
     private final float stepPx, wheelStepPx, stripW;
@@ -140,6 +141,11 @@ public class TouchpadView extends View {
         if (pointerMode == on) return;
         pointerMode = on;
         invalidate();
+    }
+
+    /** 0 = movimiento lineal; valores mayores = más aceleración al deslizar rápido. */
+    public void setAcceleration(float a) {
+        accelFactor = a;
     }
 
     public void setSensitivity(float s) {
@@ -433,7 +439,7 @@ public class TouchpadView extends View {
         float dxDp = dx / density, dyDp = dy / density;
         float v = (float) Math.hypot(dxDp, dyDp) / dt;      // dp por ms
         smoothV = smoothV * 0.5f + v * 0.5f;                 // suaviza saltos
-        float accel = 1f + Math.min(5f, Math.max(0f, smoothV - 0.08f) * 2.2f);
+        float accel = 1f + Math.min(8f, Math.max(0f, smoothV - 0.08f) * 2.2f * accelFactor);
         float gain = 2.6f * sensitivity * accel;             // "cuentas" HID por dp
         if (pointer != null) pointer.onMove(dxDp * gain, dyDp * gain);
     }

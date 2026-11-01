@@ -451,33 +451,286 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
         bindKey(R.id.mVolUp, "vol_up");
         bindKey(R.id.mVolDn, "vol_dn");
 
-        SeekBar speed = findViewById(R.id.speed);
-        int saved = prefs.getInt("mouse_speed2", 30);
-        speed.setProgress(saved);
-        applySpeed(saved);
-        speed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+        setupCalibration();
+        setupBtCard(findViewById(R.id.mouseBt));
+    }
+
+    // ------------------------------------------------------------------ calibración del mouse
+
+    private static final float DEF_SPEED = 3.0f, DEF_ACCEL = 1.0f;
+    private static final int DEF_INTERVAL = 10, DEF_MAX = 127;
+    private float calSpeed, calAccel;
+    private int calInterval, calMax;
+    private SeekBar quickSpeed, calSpeedBar, calAccelBar, calIntervalBar, calMaxBar;
+    private TextView calSpeedText, calAccelText, calIntervalText, calMaxText, calStats, calAssistText;
+    private View calAssistRow;
+
+    private static int speedToProgress(float sp) {
+        return Math.round((float) (Math.log(sp / 0.5f) / Math.log(24) * 100));
+    }
+
+    private static float progressToSpeed(int p) {
+        return (float) (0.5f * Math.pow(24, p / 100f)); // 0.5x – 12x (escala logarítmica)
+    }
+
+    private void setupCalibration() {
+        calSpeed = prefs.getFloat("cal_speed", DEF_SPEED);
+        calAccel = prefs.getFloat("cal_accel", DEF_ACCEL);
+        calInterval = prefs.getInt("cal_interval", DEF_INTERVAL);
+        calMax = prefs.getInt("cal_max", DEF_MAX);
+
+        quickSpeed = findViewById(R.id.speed);
+        quickSpeed.setProgress(speedToProgress(calSpeed));
+        quickSpeed.setOnSeekBarChangeListener(new SimpleSeek() {
+            @Override
+            public void onProgressChanged(SeekBar sb, int p, boolean user) {
+                if (user) setSpeed(progressToSpeed(p), sb);
+            }
+        });
+
+        LinearLayout card = findViewById(R.id.calCard);
+        TextView head = new TextView(this);
+        head.setText("Calibrar mouse · los cambios se aplican al instante, prueba en el panel");
+        head.setTextColor(getResources().getColor(R.color.ink));
+        head.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        card.addView(head);
+
+        calSpeedText = new TextView(this);
+        calSpeedBar = addSlider(card, calSpeedText, 100, speedToProgress(calSpeed), (p, user) -> {
+            if (user) setSpeed(progressToSpeed(p), calSpeedBar);
+        });
+        calAccelText = new TextView(this);
+        calAccelBar = addSlider(card, calAccelText, 100, Math.round(calAccel / 3f * 100), (p, user) -> {
+            calAccel = p / 100f * 3f;
+            applyCalibration();
+        });
+        calIntervalText = new TextView(this);
+        calIntervalBar = addSlider(card, calIntervalText, 46, calInterval - 4, (p, user) -> {
+            calInterval = p + 4;
+            applyCalibration();
+        });
+        calMaxText = new TextView(this);
+        calMaxBar = addSlider(card, calMaxText, 117, calMax - 10, (p, user) -> {
+            calMax = p + 10;
+            applyCalibration();
+        });
+
+        calStats = new TextView(this);
+        calStats.setTextColor(getResources().getColor(R.color.muted));
+        calStats.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        calStats.setPadding(0, dp(4), 0, dp(4));
+        card.addView(calStats);
+
+        // Asistente: deslizas y dices hasta dónde llegó el cursor
+        calAssistText = new TextView(this);
+        calAssistText.setTextColor(getResources().getColor(R.color.ink));
+        calAssistText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        calAssistText.setVisibility(View.GONE);
+        card.addView(calAssistText);
+        LinearLayout assist = new LinearLayout(this);
+        assist.setOrientation(LinearLayout.HORIZONTAL);
+        assist.setVisibility(View.GONE);
+        calAssistRow = assist;
+        String[] opts = {"Casi nada", "La mitad", "Justo", "Se pasó"};
+        final float[] mult = {3.5f, 1.9f, 1f, 0.6f};
+        for (int i = 0; i < opts.length; i++) {
+            final int idx = i;
+            assist.addView(chip(opts[i], v -> onAssistAnswer(mult[idx])), weighted());
+        }
+        card.addView(assist);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setPadding(0, dp(6), 0, 0);
+        actions.addView(chip("Asistente", v -> startAssist()), weighted());
+        actions.addView(chip("Restablecer", v -> resetCalibration()), weighted());
+        TextView done = chip("Listo", v -> toggleCalibration(false));
+        done.setBackgroundResource(R.drawable.bg_btn_accent);
+        done.setTextColor(0xFFFFFFFF);
+        actions.addView(done, weighted());
+        card.addView(actions);
+
+        View calBtn = findViewById(R.id.mCalibrate);
+        calBtn.setOnClickListener(v -> toggleCalibration(true));
+        pressFx(calBtn);
+        applyCalibration();
+    }
+
+    private interface SeekChange {
+        void onChange(int progress, boolean fromUser);
+    }
+
+    private abstract static class SimpleSeek implements SeekBar.OnSeekBarChangeListener {
+        @Override
+        public void onStartTrackingTouch(SeekBar s) {
+        }
+
+        @Override
+        public void onStopTrackingTouch(SeekBar s) {
+        }
+    }
+
+    private SeekBar addSlider(LinearLayout parent, TextView label, int max, int progress, final SeekChange change) {
+        label.setTextColor(getResources().getColor(R.color.muted));
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        label.setPadding(0, dp(6), 0, 0);
+        parent.addView(label);
+        SeekBar sb = new SeekBar(this);
+        sb.setMax(max);
+        sb.setProgress(Math.max(0, Math.min(max, progress)));
+        sb.setProgressTintList(ColorStateList.valueOf(getResources().getColor(R.color.accent)));
+        sb.setThumbTintList(ColorStateList.valueOf(getResources().getColor(R.color.accent)));
+        sb.setOnSeekBarChangeListener(new SimpleSeek() {
             @Override
             public void onProgressChanged(SeekBar s, int p, boolean user) {
-                applySpeed(p);
-            }
-
-            @Override
-            public void onStartTrackingTouch(SeekBar s) {
+                change.onChange(p, user);
             }
 
             @Override
             public void onStopTrackingTouch(SeekBar s) {
-                prefs.edit().putInt("mouse_speed2", s.getProgress()).apply();
+                saveCalibration();
             }
         });
-
-        setupBtCard(findViewById(R.id.mouseBt));
+        parent.addView(sb, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(30)));
+        return sb;
     }
 
-    private void applySpeed(int p) {
-        float s = 0.5f + p / 100f * 3.5f;
-        pad.setSensitivity(s);
-        ((TextView) findViewById(R.id.speedLabel)).setText(String.format(java.util.Locale.ROOT, "Velocidad %.1fx", s));
+    private TextView chip(String text, View.OnClickListener l) {
+        TextView t = new TextView(this);
+        t.setText(text);
+        t.setGravity(Gravity.CENTER);
+        t.setTextColor(getResources().getColor(R.color.ink));
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setBackgroundResource(R.drawable.bg_btn_flat);
+        t.setClickable(true);
+        t.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            l.onClick(v);
+        });
+        pressFx(t);
+        return t;
+    }
+
+    private LinearLayout.LayoutParams weighted() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(38), 1f);
+        lp.setMargins(dp(3), dp(3), dp(3), dp(3));
+        return lp;
+    }
+
+    private void setSpeed(float sp, SeekBar from) {
+        calSpeed = Math.max(0.5f, Math.min(12f, sp));
+        int p = speedToProgress(calSpeed);
+        if (from != quickSpeed) quickSpeed.setProgress(p);
+        if (from != calSpeedBar && calSpeedBar != null) calSpeedBar.setProgress(p);
+        applyCalibration();
+        if (from == quickSpeed) saveCalibration();
+    }
+
+    private void applyCalibration() {
+        pad.setSensitivity(calSpeed);
+        pad.setAcceleration(calAccel);
+        bt.setMouseTuning(calInterval, calMax);
+        java.util.Locale L = java.util.Locale.ROOT;
+        ((TextView) findViewById(R.id.speedLabel)).setText(String.format(L, "Velocidad %.1fx", calSpeed));
+        if (calSpeedText == null) return;
+        calSpeedText.setText(String.format(L, "Velocidad (multiplicador): %.1fx", calSpeed));
+        calAccelText.setText(calAccel < 0.05f ? "Aceleración: ninguna (lineal)"
+                : String.format(L, "Aceleración al deslizar rápido: %.1fx", calAccel));
+        calIntervalText.setText(String.format(L, "Intervalo entre paquetes: %d ms (≈ %d por segundo)",
+                calInterval, 1000 / calInterval));
+        calMaxText.setText(String.format(L, "Movimiento máximo por paquete: %d", calMax));
+    }
+
+    private void saveCalibration() {
+        prefs.edit().putFloat("cal_speed", calSpeed).putFloat("cal_accel", calAccel)
+                .putInt("cal_interval", calInterval).putInt("cal_max", calMax).apply();
+    }
+
+    private void resetCalibration() {
+        calSpeed = DEF_SPEED;
+        calAccel = DEF_ACCEL;
+        calInterval = DEF_INTERVAL;
+        calMax = DEF_MAX;
+        quickSpeed.setProgress(speedToProgress(calSpeed));
+        calSpeedBar.setProgress(speedToProgress(calSpeed));
+        calAccelBar.setProgress(Math.round(calAccel / 3f * 100));
+        calIntervalBar.setProgress(calInterval - 4);
+        calMaxBar.setProgress(calMax - 10);
+        applyCalibration();
+        saveCalibration();
+        toast("Calibración restablecida");
+    }
+
+    private void toggleCalibration(boolean show) {
+        final View card = findViewById(R.id.calCard);
+        View quick = findViewById(R.id.mouseQuick);
+        View clicks = findViewById(R.id.clickRow);
+        if (show) {
+            card.setVisibility(View.VISIBLE);
+            quick.setVisibility(View.GONE);
+            clicks.setVisibility(View.GONE);
+            card.setAlpha(0f);
+            card.setTranslationY(dp(24));
+            card.animate().alpha(1f).translationY(0).setDuration(220).start();
+            handler.post(statsTick);
+        } else {
+            saveCalibration();
+            handler.removeCallbacks(statsTick);
+            calAssistText.setVisibility(View.GONE);
+            calAssistRow.setVisibility(View.GONE);
+            card.setVisibility(View.GONE);
+            clicks.setVisibility(View.VISIBLE);
+            quick.setVisibility(View.VISIBLE);
+            quick.setAlpha(0f);
+            quick.animate().alpha(1f).setDuration(200).start();
+        }
+    }
+
+    /** Estadísticas en vivo del envío de paquetes. */
+    private final Runnable statsTick = new Runnable() {
+        @Override
+        public void run() {
+            View card = findViewById(R.id.calCard);
+            if (card.getVisibility() != View.VISIBLE) return;
+            int[] st = bt.takeStats(); // por 0.5 s
+            String txt;
+            if (!bt.isConnected()) {
+                txt = "Conecta la TV por Bluetooth para ver las estadísticas";
+            } else {
+                int sent = st[0] * 2, failed = st[1] * 2;
+                txt = "Paquetes: " + sent + "/s enviados · " + failed + "/s fallidos · pendiente " + st[2];
+                if (failed > 0 && failed * 5 > sent + failed) {
+                    txt += "\nMuchos fallos: sube el intervalo entre paquetes";
+                } else if (st[2] > 400) {
+                    txt += "\nEl movimiento se acumula: sube el máximo por paquete o baja el intervalo";
+                }
+            }
+            calStats.setText(txt);
+            handler.postDelayed(this, 500);
+        }
+    };
+
+    private void startAssist() {
+        calAssistText.setText("Desliza el dedo de lado a lado del panel, a velocidad normal. "
+                + "¿Hasta dónde llegó el cursor en la TV?");
+        calAssistText.setVisibility(View.VISIBLE);
+        calAssistRow.setVisibility(View.VISIBLE);
+        calAssistRow.setAlpha(0f);
+        calAssistRow.animate().alpha(1f).setDuration(200).start();
+    }
+
+    private void onAssistAnswer(float mult) {
+        if (mult == 1f) {
+            calAssistText.setText("¡Perfecto! Calibración guardada.");
+            calAssistRow.setVisibility(View.GONE);
+            saveCalibration();
+            handler.postDelayed(() -> calAssistText.setVisibility(View.GONE), 2500);
+            return;
+        }
+        setSpeed(calSpeed * mult, null);
+        saveCalibration();
+        calAssistText.setText(String.format(java.util.Locale.ROOT,
+                "Velocidad ajustada a %.1fx. Desliza otra vez de lado a lado: ¿hasta dónde llegó?", calSpeed));
     }
 
     /** Botón de clic: mantenerlo presionado permite arrastrar con el otro dedo. */

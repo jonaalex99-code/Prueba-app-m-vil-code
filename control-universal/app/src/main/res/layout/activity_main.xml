@@ -387,7 +387,22 @@
                 android:layout_marginTop="12dp"
                 android:layout_weight="1" />
 
+            <!-- Panel de calibración (se llena desde el código) -->
             <LinearLayout
+                android:id="@+id/calCard"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_card"
+                android:orientation="vertical"
+                android:paddingLeft="14dp"
+                android:paddingTop="10dp"
+                android:paddingRight="14dp"
+                android:paddingBottom="10dp"
+                android:visibility="gone" />
+
+            <LinearLayout
+                android:id="@+id/clickRow"
                 android:layout_width="match_parent"
                 android:layout_height="64dp"
                 android:layout_marginTop="10dp"
@@ -420,6 +435,7 @@
             </LinearLayout>
 
             <LinearLayout
+                android:id="@+id/mouseQuick"
                 android:layout_width="match_parent"
                 android:layout_height="52dp"
                 android:layout_marginTop="10dp"
@@ -443,10 +459,20 @@
                     android:contentDescription="@string/d_home"
                     android:src="@drawable/ic_home" />
 
+                <ImageButton
+                    android:id="@+id/mCalibrate"
+                    style="@style/RoundBtn"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginLeft="8dp"
+                    android:background="@drawable/bg_btn_accent"
+                    android:contentDescription="Calibrar mouse"
+                    android:src="@drawable/ic_tune" />
+
                 <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:layout_marginLeft="12dp"
+                    android:layout_marginLeft="6dp"
                     android:layout_weight="1"
                     android:orientation="vertical">
 

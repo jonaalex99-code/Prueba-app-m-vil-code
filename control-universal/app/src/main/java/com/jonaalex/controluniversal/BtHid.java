@@ -411,15 +411,33 @@ public final class BtHid {
     }
 
     /** Intervalo entre reportes del mouse: ~100 por segundo, con el movimiento acumulado. */
-    private static final long MOUSE_INTERVAL_MS = 10;
+    private volatile long mouseIntervalMs = 10;
+    private volatile int maxPerReport = 127;
     private long lastMouseReport;
+    private final java.util.concurrent.atomic.AtomicInteger statSent = new java.util.concurrent.atomic.AtomicInteger();
+    private final java.util.concurrent.atomic.AtomicInteger statFailed = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Calibración: tiempo entre paquetes del mouse (ms) y movimiento máximo por paquete (1–127). */
+    public void setMouseTuning(long intervalMs, int maxPer) {
+        mouseIntervalMs = Math.max(2, Math.min(100, intervalMs));
+        maxPerReport = Math.max(1, Math.min(127, maxPer));
+    }
+
+    /** Estadísticas desde la última llamada: {enviados, fallidos, movimiento pendiente}. */
+    public int[] takeStats() {
+        int pending;
+        synchronized (moveLock) {
+            pending = (int) (Math.abs(accX) + Math.abs(accY));
+        }
+        return new int[]{statSent.getAndSet(0), statFailed.getAndSet(0), pending};
+    }
 
     private void scheduleMove() {
         if (moveScheduled) return;
         moveScheduled = true;
         // El primer reporte sale de inmediato; los siguientes a ritmo constante, juntando
         // todo el movimiento del intervalo en un solo reporte (más grande y sin saturar el enlace).
-        long wait = Math.max(0, MOUSE_INTERVAL_MS - (SystemClock.uptimeMillis() - lastMouseReport));
+        long wait = Math.max(0, mouseIntervalMs - (SystemClock.uptimeMillis() - lastMouseReport));
         tx.postDelayed(flushMove, wait);
     }
 
@@ -429,8 +447,9 @@ public final class BtHid {
             byte[] r = new byte[4];
             int x, y, w;
             synchronized (moveLock) {
-                x = clamp(Math.round(accX));
-                y = clamp(Math.round(accY));
+                int m = maxPerReport;
+                x = Math.max(-m, Math.min(m, Math.round(accX)));
+                y = Math.max(-m, Math.min(m, Math.round(accY)));
                 w = clampWheel(accWheel);
                 accX -= x;
                 accY -= y;
@@ -442,6 +461,7 @@ public final class BtHid {
             }
             boolean ok = report(ID_MOUSE, r);
             lastMouseReport = SystemClock.uptimeMillis();
+            (ok ? statSent : statFailed).incrementAndGet();
             boolean again, big;
             synchronized (moveLock) {
                 if (!ok) {
@@ -451,10 +471,10 @@ public final class BtHid {
                     accWheel += w;
                 }
                 again = Math.abs(accX) >= 0.5f || Math.abs(accY) >= 0.5f || accWheel != 0;
-                big = Math.abs(accX) > 127 || Math.abs(accY) > 127; // deslizamiento rápido pendiente
+                big = Math.abs(accX) > maxPerReport || Math.abs(accY) > maxPerReport; // deslizamiento rápido pendiente
                 moveScheduled = again;
             }
-            if (again) tx.postDelayed(this, ok && !big ? MOUSE_INTERVAL_MS : 4);
+            if (again) tx.postDelayed(this, ok && !big ? mouseIntervalMs : Math.min(4, mouseIntervalMs));
         }
     };
 
