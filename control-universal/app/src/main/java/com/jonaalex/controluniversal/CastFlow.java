@@ -31,10 +31,25 @@ public final class CastFlow {
 
     /** Textos del botón del panel rápido en distintas marcas / idiomas. */
     static final String[] PANEL_LABELS = {
-            "Transmitir", "Proyectar", "Duplicar pantalla", "Pantalla inalámbrica", "Smart View",
-            "Enviar pantalla", "Compartir pantalla", "Screen cast", "Screencast", "Cast",
-            "Screen mirroring", "Wireless display", "Proyección", "Espejo de pantalla"
+            "Transmitir", "Transmisión", "Proyectar", "Proyección", "Duplicar pantalla", "Duplicación de pantalla",
+            "Pantalla inalámbrica", "Proyección inalámbrica", "Smart View", "Enviar pantalla", "Compartir pantalla",
+            "Espejo de pantalla", "Screen cast", "Screencast", "Screen mirroring", "Wireless display",
+            "Wireless projection", "Mirror"
     };
+    /** Etiquetas cortas que solo se aceptan si coinciden exactamente. */
+    static final String[] PANEL_EXACT = {"Cast", "Enviar"};
+
+    /** Página de "Pantalla inalámbrica" de Android: hay que habilitarla en el menú ⋮ para que busque. */
+    static final String[] WD_PAGE_HINTS = {
+            "pantallas inalámbricas", "pantalla inalámbrica", "wireless display", "wireless displays",
+            "para ver los dispositivos", "to see devices"
+    };
+    static final String[] WD_OVERFLOW = {"Más opciones", "More options", "Opciones"};
+    static final String[] WD_ENABLE = {
+            "Habilitar pantalla inalámbrica", "Activar pantalla inalámbrica", "Habilitar pantalla",
+            "Enable wireless display", "Habilitar proyección inalámbrica"
+    };
+
     /** Pasos extra en Google Home después de tocar la TV. */
     static final String[][] HOME_STEPS = {
             {"Transmitir pantalla", "Transmitir mi pantalla", "Enviar pantalla", "Cast my screen", "Cast screen"},

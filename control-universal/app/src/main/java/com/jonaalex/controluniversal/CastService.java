@@ -25,6 +25,9 @@ public class CastService extends AccessibilityService {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private long lastClickAt;
     private boolean qsOpened;
+    private long qsOpenedAt, lastQsScroll;
+    private int wdState;      // 0 = sin revisar, 1 = menú ⋮ abierto, 2 = listo
+    private long wdStateAt;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -37,6 +40,7 @@ public class CastService extends AccessibilityService {
         final CastService s = instance;
         if (s == null) return;
         s.qsOpened = false;
+        s.wdState = 0;
         s.handler.removeCallbacks(s.tick);
         s.handler.postDelayed(s.tick, 400);
     }
@@ -97,9 +101,11 @@ public class CastService extends AccessibilityService {
         if (CastFlow.panelPending) {
             if (!qsOpened) {
                 qsOpened = true;
+                qsOpenedAt = SystemClock.uptimeMillis();
                 performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);
             } else {
-                AccessibilityNodeInfo tile = findAny(roots, CastFlow.PANEL_LABELS, false);
+                AccessibilityNodeInfo tile = findPanelTile(roots);
+                if (tile == null) scrollPanel(roots); // el botón puede estar en otra página del panel
                 if (tile != null && click(tile)) {
                     CastFlow.panelPending = false;
                 } else if (elapsed > CastFlow.PANEL_TIMEOUT_MS) {
@@ -116,6 +122,12 @@ public class CastService extends AccessibilityService {
                     }
                 }
             }
+            schedule(500);
+            return;
+        }
+
+        // La pantalla básica de Android no busca TVs hasta habilitar "Pantalla inalámbrica" en ⋮.
+        if (CastFlow.step == 0 && wdState < 2 && enableWirelessDisplay(roots)) {
             schedule(500);
             return;
         }
@@ -145,6 +157,108 @@ public class CastService extends AccessibilityService {
             }
         }
         schedule(600);
+    }
+
+    private AccessibilityNodeInfo findPanelTile(List<AccessibilityNodeInfo> roots) {
+        for (String want : CastFlow.PANEL_LABELS) {
+            String w = want.toLowerCase(Locale.ROOT);
+            for (AccessibilityNodeInfo root : roots) {
+                List<AccessibilityNodeInfo> found = root.findAccessibilityNodeInfosByText(want);
+                if (found == null) continue;
+                for (AccessibilityNodeInfo n : found) {
+                    String l = label(n).toLowerCase(Locale.ROOT);
+                    if (l.length() <= 48 && l.contains(w)) return n;
+                }
+            }
+        }
+        return findAny(roots, CastFlow.PANEL_EXACT, false);
+    }
+
+    private void scrollPanel(List<AccessibilityNodeInfo> roots) {
+        long now = SystemClock.uptimeMillis();
+        if (now - qsOpenedAt < 1500 || now - lastQsScroll < 1200) return;
+        lastQsScroll = now;
+        for (AccessibilityNodeInfo root : roots) {
+            AccessibilityNodeInfo sc = findScrollable(root, 0);
+            if (sc != null && sc.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return;
+        }
+    }
+
+    private AccessibilityNodeInfo findScrollable(AccessibilityNodeInfo n, int depth) {
+        if (n == null || depth > 12) return null;
+        if (n.isScrollable()) return n;
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo r = findScrollable(n.getChild(i), depth + 1);
+            if (r != null) return r;
+        }
+        return null;
+    }
+
+    /**
+     * Si está abierta la página "Pantalla inalámbrica" de Android y no se ve ninguna TV,
+     * abre el menú ⋮ y marca "Habilitar pantalla inalámbrica". Devuelve true si actuó.
+     */
+    private boolean enableWirelessDisplay(List<AccessibilityNodeInfo> roots) {
+        long now = SystemClock.uptimeMillis();
+        if (wdState == 0) {
+            if (findContaining(roots, CastFlow.WD_PAGE_HINTS) == null) return false;
+            AccessibilityNodeInfo more = findAny(roots, CastFlow.WD_OVERFLOW, false);
+            if (more == null || !click(more)) {
+                wdState = 2;
+                return false;
+            }
+            wdState = 1;
+            wdStateAt = now;
+            return true;
+        }
+        // wdState == 1: el menú ⋮ está abierto
+        AccessibilityNodeInfo item = findContaining(roots, CastFlow.WD_ENABLE);
+        if (item != null) {
+            AccessibilityNodeInfo row = clickableAncestorOf(item);
+            if (isCheckedInside(row != null ? row : item, 0)) {
+                performGlobalAction(GLOBAL_ACTION_BACK); // ya estaba habilitado: cerrar menú
+            } else {
+                click(item);
+                toast("Activé «Pantalla inalámbrica»: buscando TVs…");
+            }
+            wdState = 2;
+            return true;
+        }
+        if (now - wdStateAt > 2500) {
+            performGlobalAction(GLOBAL_ACTION_BACK);
+            wdState = 2;
+        }
+        return true;
+    }
+
+    private AccessibilityNodeInfo findContaining(List<AccessibilityNodeInfo> roots, String[] texts) {
+        for (String t : texts) {
+            String w = t.toLowerCase(Locale.ROOT);
+            for (AccessibilityNodeInfo root : roots) {
+                List<AccessibilityNodeInfo> found = root.findAccessibilityNodeInfosByText(t);
+                if (found == null) continue;
+                for (AccessibilityNodeInfo n : found) {
+                    if (label(n).toLowerCase(Locale.ROOT).contains(w)) return n;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static AccessibilityNodeInfo clickableAncestorOf(AccessibilityNodeInfo n) {
+        AccessibilityNodeInfo cur = n;
+        for (int i = 0; cur != null && i < 8; i++) {
+            if (cur.isClickable()) return cur;
+            cur = cur.getParent();
+        }
+        return null;
+    }
+
+    private boolean isCheckedInside(AccessibilityNodeInfo n, int depth) {
+        if (n == null || depth > 4) return false;
+        if (n.isCheckable() && n.isChecked()) return true;
+        for (int i = 0; i < n.getChildCount(); i++) if (isCheckedInside(n.getChild(i), depth + 1)) return true;
+        return false;
     }
 
     private void advance(String name) {

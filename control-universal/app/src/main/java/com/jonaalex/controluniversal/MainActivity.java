@@ -1371,6 +1371,9 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
                 .setNegativeButton("Proyectar a mano", (d, w) -> {
                     if (!CastFlow.start(MainActivity.this, false)) {
                         toast("Abre «Transmitir» en el panel rápido del celular y toca tu TV.");
+                    } else {
+                        Toast.makeText(MainActivity.this, "Si dice «No se encontraron pantallas»: toca ⋮ (arriba a la "
+                                + "derecha) › «Habilitar pantalla inalámbrica»", Toast.LENGTH_LONG).show();
                     }
                 })
                 .show();
