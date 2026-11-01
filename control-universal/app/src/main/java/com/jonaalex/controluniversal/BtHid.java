@@ -148,15 +148,22 @@ public final class BtHid {
         return state != State.UNSUPPORTED;
     }
 
+    private volatile String cachedName;
+    private volatile BluetoothDevice cachedFor;
+
     public String deviceName() {
         BluetoothDevice d = device != null ? device : wanted;
         if (d == null) return null;
+        if (d.equals(cachedFor) && cachedName != null) return cachedName;
+        String n;
         try {
-            String n = d.getName();
-            return n != null ? n : d.getAddress();
-        } catch (SecurityException e) {
-            return d.getAddress();
+            n = d.getName();
+        } catch (Exception e) {
+            n = null;
         }
+        cachedName = n != null ? n : d.getAddress();
+        cachedFor = d;
+        return cachedName;
     }
 
     public boolean adapterEnabled() {
@@ -260,17 +267,8 @@ public final class BtHid {
                 BluetoothHidDevice.SUBCLASS1_COMBO, DESCRIPTOR);
         try {
             if (callback == null) callback = new HidCallback();
-            // Calidad de servicio de baja latencia (~11 ms): pide al Bluetooth más paquetes por segundo.
-            android.bluetooth.BluetoothHidDeviceAppQosSettings qos = new android.bluetooth.BluetoothHidDeviceAppQosSettings(
-                    android.bluetooth.BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT, 800, 9, 0, 11250,
-                    android.bluetooth.BluetoothHidDeviceAppQosSettings.MAX);
-            boolean ok = false;
-            try {
-                ok = hid.registerApp(sdp, null, qos, cbExec, (BluetoothHidDevice.Callback) callback);
-            } catch (Exception e) {
-                Log.w(TAG, "registerApp con QoS", e);
-            }
-            if (!ok) ok = hid.registerApp(sdp, null, null, cbExec, (BluetoothHidDevice.Callback) callback);
+            // Sin QoS: el ajuste de calidad de servicio limitaba el ancho de banda y atascaba el enlace.
+            boolean ok = hid.registerApp(sdp, null, null, cbExec, (BluetoothHidDevice.Callback) callback);
             if (!ok) {
                 Log.w(TAG, "registerApp devolvió false");
                 setState(State.UNSUPPORTED);
@@ -396,8 +394,9 @@ public final class BtHid {
     public void move(float dx, float dy) {
         if (!isConnected()) return;
         synchronized (moveLock) {
-            accX += dx;
-            accY += dy;
+            // Si el enlace va atrasado, no acumulamos movimiento sin límite (evita que se "congele").
+            accX = Math.max(-MAX_BACKLOG, Math.min(MAX_BACKLOG, accX + dx));
+            accY = Math.max(-MAX_BACKLOG, Math.min(MAX_BACKLOG, accY + dy));
             scheduleMove();
         }
     }
@@ -434,6 +433,8 @@ public final class BtHid {
     private volatile long mouseIntervalMs = 10;
     private volatile int maxPerReport = 127;
     private long lastMouseReport;
+    private int failStreak;                  // fallos seguidos del enlace
+    private static final float MAX_BACKLOG = 3000f;
     private final java.util.concurrent.atomic.AtomicInteger statSent = new java.util.concurrent.atomic.AtomicInteger();
     private final java.util.concurrent.atomic.AtomicInteger statFailed = new java.util.concurrent.atomic.AtomicInteger();
 
@@ -461,7 +462,7 @@ public final class BtHid {
     /** Fuerza el modo rápido aunque la TV se haya emparejado con una versión anterior. */
     public void setForceWide(boolean on) {
         forceWide = on;
-        prefs().edit().putBoolean("bt_force_wide", on).apply();
+        prefs().edit().putBoolean("bt_force_wide2", on).apply();
         updateWide();
     }
 
@@ -478,7 +479,7 @@ public final class BtHid {
     private void watchBonds() {
         if (bondReceiverOn) return;
         bondReceiverOn = true;
-        forceWide = prefs().getBoolean("bt_force_wide", false);
+        forceWide = prefs().getBoolean("bt_force_wide2", false);
         android.content.IntentFilter f = new android.content.IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
         android.content.BroadcastReceiver r = new android.content.BroadcastReceiver() {
             @Override
@@ -550,17 +551,31 @@ public final class BtHid {
             boolean again, big;
             synchronized (moveLock) {
                 if (!ok) {
-                    // El enlace estaba ocupado: devolvemos el movimiento para no perderlo.
-                    accX += x;
-                    accY += y;
-                    accWheel += w;
+                    failStreak++;
+                    if (failStreak <= 20) {
+                        // El enlace estaba ocupado: devolvemos el movimiento para no perderlo.
+                        accX += x;
+                        accY += y;
+                        accWheel += w;
+                    } else {
+                        // Demasiados fallos seguidos: descartamos lo pendiente para no trabar todo.
+                        accX = accY = 0;
+                        accWheel = 0;
+                    }
+                } else {
+                    failStreak = 0;
                 }
                 again = Math.abs(accX) >= 0.5f || Math.abs(accY) >= 0.5f || accWheel != 0;
                 int lim = w16 ? maxPerReport * 16 : maxPerReport;
                 big = Math.abs(accX) > lim || Math.abs(accY) > lim; // deslizamiento rápido pendiente
                 moveScheduled = again;
             }
-            if (again) tx.postDelayed(this, ok && !big ? mouseIntervalMs : Math.min(4, mouseIntervalMs));
+            if (again) {
+                // Reintento con espera creciente si el enlace está ocupado (no saturarlo).
+                long delay = ok ? (big ? Math.min(4, mouseIntervalMs) : mouseIntervalMs)
+                        : Math.min(120, 8L << Math.min(4, failStreak));
+                tx.postDelayed(this, delay);
+            }
         }
     };
 
