@@ -360,14 +360,15 @@ public final class BtHid {
     // ------------------------------------------------------------------ envío
 
     @TargetApi(28)
-    private void report(int id, byte[] data) {
+    private boolean report(int id, byte[] data) {
         BluetoothHidDevice h = hid;
         BluetoothDevice d = device;
-        if (h == null || d == null) return;
+        if (h == null || d == null) return true; // sin conexión: no reintentar
         try {
-            h.sendReport(d, id, data);
+            return h.sendReport(d, id, data);
         } catch (Exception e) {
             Log.w(TAG, "sendReport", e);
+            return true;
         }
     }
 
@@ -409,19 +410,28 @@ public final class BtHid {
         }, 30);
     }
 
+    /** Intervalo entre reportes del mouse: ~100 por segundo, con el movimiento acumulado. */
+    private static final long MOUSE_INTERVAL_MS = 10;
+    private long lastMouseReport;
+
     private void scheduleMove() {
         if (moveScheduled) return;
         moveScheduled = true;
-        tx.post(flushMove);
+        // El primer reporte sale de inmediato; los siguientes a ritmo constante, juntando
+        // todo el movimiento del intervalo en un solo reporte (más grande y sin saturar el enlace).
+        long wait = Math.max(0, MOUSE_INTERVAL_MS - (SystemClock.uptimeMillis() - lastMouseReport));
+        tx.postDelayed(flushMove, wait);
     }
 
     private final Runnable flushMove = new Runnable() {
         @Override
         public void run() {
             byte[] r = new byte[4];
-            boolean again;
+            int x, y, w;
             synchronized (moveLock) {
-                int x = clamp((int) accX), y = clamp((int) accY), w = clampWheel(accWheel);
+                x = clamp(Math.round(accX));
+                y = clamp(Math.round(accY));
+                w = clampWheel(accWheel);
                 accX -= x;
                 accY -= y;
                 accWheel -= w;
@@ -429,11 +439,22 @@ public final class BtHid {
                 r[1] = (byte) x;
                 r[2] = (byte) y;
                 r[3] = (byte) w;
-                again = Math.abs(accX) >= 1 || Math.abs(accY) >= 1 || accWheel != 0;
+            }
+            boolean ok = report(ID_MOUSE, r);
+            lastMouseReport = SystemClock.uptimeMillis();
+            boolean again, big;
+            synchronized (moveLock) {
+                if (!ok) {
+                    // El enlace estaba ocupado: devolvemos el movimiento para no perderlo.
+                    accX += x;
+                    accY += y;
+                    accWheel += w;
+                }
+                again = Math.abs(accX) >= 0.5f || Math.abs(accY) >= 0.5f || accWheel != 0;
+                big = Math.abs(accX) > 127 || Math.abs(accY) > 127; // deslizamiento rápido pendiente
                 moveScheduled = again;
             }
-            report(ID_MOUSE, r);
-            if (again) tx.postDelayed(this, 4);
+            if (again) tx.postDelayed(this, ok && !big ? MOUSE_INTERVAL_MS : 4);
         }
     };
 

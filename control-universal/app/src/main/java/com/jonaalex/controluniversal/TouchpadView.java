@@ -325,6 +325,7 @@ public class TouchpadView extends View {
                 downX = lastX = fingerX = x;
                 downY = lastY = fingerY = y;
                 accX = accY = wheelAcc = 0;
+                smoothV = 0;
                 downTime = lastMoveTime = e.getEventTime();
                 trailCount = 0;
                 postDelayed(longPress, LONG_PRESS_MS);
@@ -417,17 +418,24 @@ public class TouchpadView extends View {
         return super.onTouchEvent(e);
     }
 
-    /** Movimiento con aceleración: lento = preciso, rápido = cruza la pantalla. */
+    private float smoothV;
+
+    /**
+     * Movimiento con aceleración tipo touchpad de laptop: lento = preciso,
+     * rápido = cruza la pantalla de la TV con un solo deslizamiento.
+     */
     private void pointerStep(float x, float y, long t) {
         float dx = x - lastX, dy = y - lastY;
         lastX = x;
         lastY = y;
         long dt = Math.max(1, t - lastMoveTime);
         lastMoveTime = t;
-        float v = (float) Math.hypot(dx, dy) / density / dt; // dp por ms
-        float accel = 1f + Math.max(0f, Math.min(2.4f, (v - 0.15f) * 1.6f));
-        float gain = 1.25f * sensitivity * accel / density * 2.2f;
-        if (pointer != null) pointer.onMove(dx * gain, dy * gain);
+        float dxDp = dx / density, dyDp = dy / density;
+        float v = (float) Math.hypot(dxDp, dyDp) / dt;      // dp por ms
+        smoothV = smoothV * 0.5f + v * 0.5f;                 // suaviza saltos
+        float accel = 1f + Math.min(5f, Math.max(0f, smoothV - 0.08f) * 2.2f);
+        float gain = 2.6f * sensitivity * accel;             // "cuentas" HID por dp
+        if (pointer != null) pointer.onMove(dxDp * gain, dyDp * gain);
     }
 
     private void emitWheel() {

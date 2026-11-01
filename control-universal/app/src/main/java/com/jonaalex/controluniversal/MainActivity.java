@@ -452,7 +452,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
         bindKey(R.id.mVolDn, "vol_dn");
 
         SeekBar speed = findViewById(R.id.speed);
-        int saved = prefs.getInt("mouse_speed", 45);
+        int saved = prefs.getInt("mouse_speed2", 30);
         speed.setProgress(saved);
         applySpeed(saved);
         speed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
@@ -467,7 +467,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
 
             @Override
             public void onStopTrackingTouch(SeekBar s) {
-                prefs.edit().putInt("mouse_speed", s.getProgress()).apply();
+                prefs.edit().putInt("mouse_speed2", s.getProgress()).apply();
             }
         });
 
@@ -475,7 +475,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
     }
 
     private void applySpeed(int p) {
-        float s = 0.4f + p / 100f * 2.0f;
+        float s = 0.5f + p / 100f * 3.5f;
         pad.setSensitivity(s);
         ((TextView) findViewById(R.id.speedLabel)).setText(String.format(java.util.Locale.ROOT, "Velocidad %.1fx", s));
     }
