@@ -37,6 +37,7 @@ public final class BtHid {
     public static final int ID_KEYBOARD = 1;
     public static final int ID_MOUSE = 2;
     public static final int ID_CONSUMER = 3;
+    public static final int ID_MOUSE_WIDE = 4; // mouse "rápido": X/Y de 16 bits
 
     // Teclas multimedia (HID Consumer Page)
     public static final int CC_HOME = 0x0223;
@@ -71,7 +72,14 @@ public final class BtHid {
             // Control multimedia (ID 3)
             0x05, 0x0C, 0x09, 0x01, 0xA1, 0x01, 0x85, ID_CONSUMER,
             0x15, 0x00, 0x26, 0xFF, 0x03, 0x19, 0x00, 0x2A, 0xFF, 0x03, 0x75, 0x10, 0x95, 0x01, 0x81, 0x00,
-            0xC0);
+            0xC0,
+            // Mouse rápido (ID 4): 3 botones, X e Y de 16 bits (hasta ±32767 por paquete), rueda
+            0x05, 0x01, 0x09, 0x02, 0xA1, 0x01, 0x85, ID_MOUSE_WIDE, 0x09, 0x01, 0xA1, 0x00,
+            0x05, 0x09, 0x19, 0x01, 0x29, 0x03, 0x15, 0x00, 0x25, 0x01, 0x95, 0x03, 0x75, 0x01, 0x81, 0x02,
+            0x95, 0x01, 0x75, 0x05, 0x81, 0x01,
+            0x05, 0x01, 0x09, 0x30, 0x09, 0x31, 0x16, 0x01, 0x80, 0x26, 0xFF, 0x7F, 0x75, 0x10, 0x95, 0x02, 0x81, 0x06,
+            0x09, 0x38, 0x15, 0x81, 0x25, 0x7F, 0x75, 0x08, 0x95, 0x01, 0x81, 0x06,
+            0xC0, 0xC0);
 
     public enum State { UNSUPPORTED, OFF, IDLE, REGISTERING, READY, CONNECTING, CONNECTED }
 
@@ -217,6 +225,7 @@ public final class BtHid {
             else register();
             return;
         }
+        watchBonds();
         String saved = savedAddress();
         if (saved != null && wanted == null) {
             try {
@@ -251,7 +260,17 @@ public final class BtHid {
                 BluetoothHidDevice.SUBCLASS1_COMBO, DESCRIPTOR);
         try {
             if (callback == null) callback = new HidCallback();
-            boolean ok = hid.registerApp(sdp, null, null, cbExec, (BluetoothHidDevice.Callback) callback);
+            // Calidad de servicio de baja latencia (~11 ms): pide al Bluetooth más paquetes por segundo.
+            android.bluetooth.BluetoothHidDeviceAppQosSettings qos = new android.bluetooth.BluetoothHidDeviceAppQosSettings(
+                    android.bluetooth.BluetoothHidDeviceAppQosSettings.SERVICE_BEST_EFFORT, 800, 9, 0, 11250,
+                    android.bluetooth.BluetoothHidDeviceAppQosSettings.MAX);
+            boolean ok = false;
+            try {
+                ok = hid.registerApp(sdp, null, qos, cbExec, (BluetoothHidDevice.Callback) callback);
+            } catch (Exception e) {
+                Log.w(TAG, "registerApp con QoS", e);
+            }
+            if (!ok) ok = hid.registerApp(sdp, null, null, cbExec, (BluetoothHidDevice.Callback) callback);
             if (!ok) {
                 Log.w(TAG, "registerApp devolvió false");
                 setState(State.UNSUPPORTED);
@@ -285,6 +304,7 @@ public final class BtHid {
                 device = d;
                 wanted = d;
                 prefs().edit().putString("bt_tv", d.getAddress()).apply();
+                updateWide();
                 setState(State.CONNECTED);
             } else if (s == BluetoothProfile.STATE_CONNECTING) {
                 wanted = d;
@@ -298,7 +318,7 @@ public final class BtHid {
         @Override
         public void onGetReport(BluetoothDevice d, byte type, byte id, int bufferSize) {
             if (hid == null) return;
-            int len = id == ID_KEYBOARD ? 8 : id == ID_MOUSE ? 4 : 2;
+            int len = id == ID_KEYBOARD ? 8 : id == ID_MOUSE ? 4 : id == ID_MOUSE_WIDE ? 6 : 2;
             hid.replyReport(d, type, id, new byte[len]);
         }
 
@@ -423,6 +443,62 @@ public final class BtHid {
         maxPerReport = Math.max(1, Math.min(127, maxPer));
     }
 
+    // ------------------------------------------------------------------ modo rápido (16 bits)
+
+    private volatile boolean wide;
+    private volatile boolean forceWide;
+    private boolean bondReceiverOn;
+
+    /** true si la TV conectada usa el mouse rápido de 16 bits. */
+    public boolean isWide() {
+        return wide;
+    }
+
+    public boolean isForceWide() {
+        return forceWide;
+    }
+
+    /** Fuerza el modo rápido aunque la TV se haya emparejado con una versión anterior. */
+    public void setForceWide(boolean on) {
+        forceWide = on;
+        prefs().edit().putBoolean("bt_force_wide", on).apply();
+        updateWide();
+    }
+
+    private void updateWide() {
+        BluetoothDevice d = device;
+        wide = forceWide || (d != null && prefs().getStringSet("bt_wide", java.util.Collections.<String>emptySet())
+                .contains(d.getAddress()));
+    }
+
+    /**
+     * Las TVs guardan la descripción del mouse al emparejarse. Las que se emparejen desde ahora
+     * ya conocen el mouse rápido; las anteriores siguen con el normal hasta volver a emparejar.
+     */
+    private void watchBonds() {
+        if (bondReceiverOn) return;
+        bondReceiverOn = true;
+        forceWide = prefs().getBoolean("bt_force_wide", false);
+        android.content.IntentFilter f = new android.content.IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
+        android.content.BroadcastReceiver r = new android.content.BroadcastReceiver() {
+            @Override
+            public void onReceive(Context c, android.content.Intent i) {
+                BluetoothDevice d = i.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                int st = i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, -1);
+                if (d == null) return;
+                java.util.Set<String> set = new java.util.HashSet<>(
+                        prefs().getStringSet("bt_wide", java.util.Collections.<String>emptySet()));
+                if (st == BluetoothDevice.BOND_BONDED) set.add(d.getAddress());
+                else if (st == BluetoothDevice.BOND_NONE) set.remove(d.getAddress());
+                else return;
+                prefs().edit().putStringSet("bt_wide", set).apply();
+                updateWide();
+            }
+        };
+        if (Build.VERSION.SDK_INT >= 33) ctx.registerReceiver(r, f, Context.RECEIVER_EXPORTED);
+        else ctx.registerReceiver(r, f);
+    }
+
     /** Estadísticas desde la última llamada: {enviados, fallidos, movimiento pendiente}. */
     public int[] takeStats() {
         int pending;
@@ -444,10 +520,11 @@ public final class BtHid {
     private final Runnable flushMove = new Runnable() {
         @Override
         public void run() {
-            byte[] r = new byte[4];
+            final boolean w16 = wide;
+            byte[] r = new byte[w16 ? 6 : 4];
             int x, y, w;
             synchronized (moveLock) {
-                int m = maxPerReport;
+                int m = w16 ? Math.min(32000, maxPerReport * 16) : maxPerReport;
                 x = Math.max(-m, Math.min(m, Math.round(accX)));
                 y = Math.max(-m, Math.min(m, Math.round(accY)));
                 w = clampWheel(accWheel);
@@ -455,11 +532,19 @@ public final class BtHid {
                 accY -= y;
                 accWheel -= w;
                 r[0] = (byte) buttons;
-                r[1] = (byte) x;
-                r[2] = (byte) y;
-                r[3] = (byte) w;
+                if (w16) {
+                    r[1] = (byte) x;
+                    r[2] = (byte) (x >> 8);
+                    r[3] = (byte) y;
+                    r[4] = (byte) (y >> 8);
+                    r[5] = (byte) w;
+                } else {
+                    r[1] = (byte) x;
+                    r[2] = (byte) y;
+                    r[3] = (byte) w;
+                }
             }
-            boolean ok = report(ID_MOUSE, r);
+            boolean ok = report(w16 ? ID_MOUSE_WIDE : ID_MOUSE, r);
             lastMouseReport = SystemClock.uptimeMillis();
             (ok ? statSent : statFailed).incrementAndGet();
             boolean again, big;
@@ -471,7 +556,8 @@ public final class BtHid {
                     accWheel += w;
                 }
                 again = Math.abs(accX) >= 0.5f || Math.abs(accY) >= 0.5f || accWheel != 0;
-                big = Math.abs(accX) > maxPerReport || Math.abs(accY) > maxPerReport; // deslizamiento rápido pendiente
+                int lim = w16 ? maxPerReport * 16 : maxPerReport;
+                big = Math.abs(accX) > lim || Math.abs(accY) > lim; // deslizamiento rápido pendiente
                 moveScheduled = again;
             }
             if (again) tx.postDelayed(this, ok && !big ? mouseIntervalMs : Math.min(4, mouseIntervalMs));

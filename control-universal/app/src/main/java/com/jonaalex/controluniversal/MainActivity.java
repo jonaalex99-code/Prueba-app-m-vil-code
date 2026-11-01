@@ -114,6 +114,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
 
         refreshMode();
         bt.addListener(this);
+        handler.postDelayed(cardStats, 1000);
         // Reconecta solo a la TV Bluetooth guardada.
         if (bt.isSupported() && BtHid.hasPermission(this) && bt.adapterEnabled() && bt.savedAddress() != null) {
             bt.start();
@@ -475,11 +476,11 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
     private View calAssistRow;
 
     private static int speedToProgress(float sp) {
-        return Math.round((float) (Math.log(sp / 0.5f) / Math.log(24) * 100));
+        return Math.round((float) (Math.log(sp / 0.5f) / Math.log(50) * 100));
     }
 
     private static float progressToSpeed(int p) {
-        return (float) (0.5f * Math.pow(24, p / 100f)); // 0.5x – 12x (escala logarítmica)
+        return (float) (0.5f * Math.pow(50, p / 100f)); // 0.5x – 25x (escala logarítmica)
     }
 
     private void setupCalibration() {
@@ -523,6 +524,20 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
             calMax = p + 10;
             applyCalibration();
         });
+
+        final Switch wideSwitch = new Switch(this);
+        wideSwitch.setText("Modo rápido (paquetes de 16 bits)");
+        wideSwitch.setTextColor(getResources().getColor(R.color.ink));
+        wideSwitch.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        wideSwitch.setChecked(bt.isForceWide() || bt.isWide());
+        wideSwitch.setOnCheckedChangeListener((b, on) -> {
+            if (!b.isPressed()) return;
+            bt.setForceWide(on);
+            applyCalibration();
+            onStateChanged(bt.state(), bt.deviceName());
+            if (on && !bt.isWide()) toast("Conéctate a la TV para usar el modo rápido");
+        });
+        card.addView(wideSwitch, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(40)));
 
         calStats = new TextView(this);
         calStats.setTextColor(getResources().getColor(R.color.muted));
@@ -627,7 +642,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
     }
 
     private void setSpeed(float sp, SeekBar from) {
-        calSpeed = Math.max(0.5f, Math.min(12f, sp));
+        calSpeed = Math.max(0.5f, Math.min(25f, sp));
         int p = speedToProgress(calSpeed);
         if (from != quickSpeed) quickSpeed.setProgress(p);
         if (from != calSpeedBar && calSpeedBar != null) calSpeedBar.setProgress(p);
@@ -647,7 +662,9 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
                 : String.format(L, "Aceleración al deslizar rápido: %.1fx", calAccel));
         calIntervalText.setText(String.format(L, "Intervalo entre paquetes: %d ms (≈ %d por segundo)",
                 calInterval, 1000 / calInterval));
-        calMaxText.setText(String.format(L, "Movimiento máximo por paquete: %d", calMax));
+        calMaxText.setText(bt.isWide()
+                ? String.format(L, "Movimiento máximo por paquete: %d (modo rápido)", calMax * 16)
+                : String.format(L, "Movimiento máximo por paquete: %d", calMax));
     }
 
     private void saveCalibration() {
@@ -864,7 +881,10 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
 
     private void setupBtCard(View card) {
         View action = card.findViewById(R.id.btCardAction);
-        action.setOnClickListener(v -> onBtAction());
+        action.setOnClickListener(v -> {
+            if (bt.isConnected() && !bt.isWide()) showFastModeDialog();
+            else onBtAction();
+        });
         pressFx(action);
     }
 
@@ -891,8 +911,9 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
                 break;
             case CONNECTED:
                 title = "Conectado a " + (name != null ? name : "la TV");
-                sub = page == 2 ? "Lo que escribas aparece en la TV" : "Mueve el dedo: el cursor se mueve en la TV";
-                act = "Cambiar";
+                if (page == 2) sub = "Lo que escribas aparece en la TV";
+                else sub = bt.isWide() ? "Mouse en modo rápido" : "Mouse en modo normal · toca «Rápido»";
+                act = bt.isWide() ? "Cambiar" : "Rápido";
                 break;
             case CONNECTING:
             case REGISTERING:
@@ -921,6 +942,52 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
         pad.setHint(connected
                 ? "Mueve el dedo para mover el cursor\nToca = clic · Dos dedos = clic derecho o desplazar\nMantén presionado y arrastra = arrastrar"
                 : "Sin Bluetooth: desliza = flechas · toca = OK\nmantén presionado = Atrás (infrarrojo)\n\nConecta el Bluetooth para tener cursor de mouse");
+    }
+
+    /** Muestra en la tarjeta cuántos paquetes por segundo llegan a la TV. */
+    private final Runnable cardStats = new Runnable() {
+        @Override
+        public void run() {
+            if (page != 1 || !bt.isConnected() || findViewById(R.id.calCard).getVisibility() == View.VISIBLE) {
+                handler.postDelayed(this, 1000);
+                return;
+            }
+            int[] st = bt.takeStats();
+            if (st[0] + st[1] > 0) {
+                String txt = (bt.isWide() ? "Modo rápido" : "Modo normal · toca «Rápido»") + " · " + st[0] + " paquetes/s"
+                        + (st[1] > 0 ? " · " + st[1] + " fallidos" : "");
+                ((TextView) findViewById(R.id.mouseBt).findViewById(R.id.btCardSub)).setText(txt);
+            }
+            handler.postDelayed(this, 1000);
+        }
+    };
+
+    private void showFastModeDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Activar el modo rápido del mouse")
+                .setMessage("El modo rápido envía hasta 16 veces más movimiento en cada paquete, así el cursor "
+                        + "cruza la pantalla aunque el Bluetooth de la TV sea lento.\n\n"
+                        + "Tu TV guardó el mouse anterior al emparejarse, así que hay que emparejar de nuevo (una sola vez):\n"
+                        + "1. En la TV: Ajustes › Bluetooth (o Control remoto y accesorios) › «" + bt.localName()
+                        + "» › Olvidar / Desvincular.\n"
+                        + "2. En el celular: Ajustes › Bluetooth › tu TV › Desvincular.\n"
+                        + "3. Vuelve aquí: Bluetooth › Emparejar una TV nueva.\n\n"
+                        + "También puedes «Probar ya»: si el cursor deja de moverse, desactívalo en Calibrar.")
+                .setPositiveButton("Emparejar de nuevo", (d, w) -> showPairDialog())
+                .setNeutralButton("Bluetooth del celular", (d, w) -> {
+                    try {
+                        startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS));
+                    } catch (Exception e) {
+                        toast("Abre Ajustes › Bluetooth");
+                    }
+                })
+                .setNegativeButton("Probar ya", (d, w) -> {
+                    bt.setForceWide(true);
+                    onStateChanged(bt.state(), bt.deviceName());
+                    applyCalibration();
+                    toast("Modo rápido activado: prueba el panel. Si no se mueve, desactívalo en Calibrar.");
+                })
+                .show();
     }
 
     private void pulseLoop(final View v) {
