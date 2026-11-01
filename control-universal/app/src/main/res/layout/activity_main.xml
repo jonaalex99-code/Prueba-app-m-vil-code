@@ -622,6 +622,105 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- Buscador de televisores cercanos (Wi-Fi Direct, sin red) -->
+        <LinearLayout
+            android:id="@+id/scanOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#F20B0B0D"
+            android:clickable="true"
+            android:elevation="16dp"
+            android:focusable="true"
+            android:orientation="vertical"
+            android:paddingLeft="20dp"
+            android:paddingTop="8dp"
+            android:paddingRight="20dp"
+            android:paddingBottom="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Buscando televisores cerca"
+                android:textColor="@color/ink"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/scanStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Sin red WiFi: el celular se conecta directo a la TV"
+                android:textColor="@color/muted"
+                android:textSize="13sp" />
+
+            <com.jonaalex.controluniversal.RadarView
+                android:id="@+id/radar"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="8dp"
+                android:layout_weight="1" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:fadeScrollbars="true">
+
+                <LinearLayout
+                    android:id="@+id/scanList"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+            </ScrollView>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="46dp"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/scanPower"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_btn_hit"
+                    android:clickable="true"
+                    android:gravity="center"
+                    android:text="Encender TV"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/scanSystem"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginLeft="8dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_btn_flat"
+                    android:clickable="true"
+                    android:gravity="center"
+                    android:text="Lista del sistema"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:id="@+id/scanClose"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginLeft="8dp"
+                    android:layout_weight="0.8"
+                    android:background="@drawable/bg_btn_flat"
+                    android:clickable="true"
+                    android:gravity="center"
+                    android:text="Cerrar"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp" />
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- Aviso flotante (búsqueda de la TV, detección) -->
         <LinearLayout
             android:id="@+id/banner"

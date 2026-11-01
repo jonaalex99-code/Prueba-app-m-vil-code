@@ -122,7 +122,21 @@ public final class CastFlow {
      * @param auto true si el servicio de accesibilidad hará los toques automáticos.
      */
     public static boolean start(Context c, boolean auto) {
+        return start(c, auto, null);
+    }
+
+    /** Proyección directa (Miracast): nunca usa Google Home, que requiere la misma red. */
+    public static boolean startDirect(Context c) {
         String m = method(c);
+        if (METHOD_HOME.equals(m)) {
+            boolean xiaomi = "xiaomi".equalsIgnoreCase(Build.MANUFACTURER);
+            m = xiaomi ? METHOD_PANEL : METHOD_SETTINGS;
+        }
+        return start(c, true, m);
+    }
+
+    public static boolean start(Context c, boolean auto, String forced) {
+        String m = forced != null ? forced : method(c);
         Intent i = null;
         boolean usePanel = false;
         if (METHOD_HOME.equals(m)) {

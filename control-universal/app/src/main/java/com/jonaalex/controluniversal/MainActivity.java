@@ -137,6 +137,15 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
     }
 
     @Override
+    public void onBackPressed() {
+        if (findViewById(R.id.scanOverlay).getVisibility() == View.VISIBLE) {
+            hideScanner();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    @Override
     protected void onDestroy() {
         bt.removeListener(this);
         ir.setTxListener(null);
@@ -958,6 +967,14 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
     @Override
     public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
         super.onRequestPermissionsResult(code, perms, results);
+        if (code == REQ_SCAN) {
+            if (TvScanner.hasPermission(this)) onCast();
+            else {
+                toast("Sin el permiso de dispositivos cercanos se abre la lista del sistema");
+                castViaSystemList();
+            }
+            return;
+        }
         if (code != REQ_BT_PERMS) return;
         if (BtHid.hasPermission(this)) onBtAction();
         else toast("Sin el permiso de «Dispositivos cercanos» no se puede usar el Bluetooth");
@@ -1310,16 +1327,200 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
             }
             return;
         }
+        // Buscar TVs alrededor por Wi-Fi Direct (sin red).
+        if (!TvScanner.hasPermission(this) && Build.VERSION.SDK_INT >= 23) {
+            requestPermissions(TvScanner.neededPermissions(), REQ_SCAN);
+            return;
+        }
+        if (!TvScanner.locationOk(this)) {
+            pendingCastAfterWifi = true;
+            toast("Activa la Ubicación: Android la pide para buscar dispositivos Wi-Fi Direct cercanos");
+            startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+            return;
+        }
+        showScanner();
+    }
+
+    /** Abre directamente la lista de Transmitir del sistema (sin el buscador). */
+    private void castViaSystemList() {
         if (CastFlow.tvName(this) == null) {
             toast("Toca el nombre de tu TV en la lista. La app lo recordará para la próxima vez.");
         }
-        if (!CastFlow.start(this, true)) {
+        if (!CastFlow.startDirect(this)) {
             toast("No encontré el menú de Transmitir. Ábrelo en el panel rápido del celular.");
         }
     }
 
+    // ------------------------------------------------------------------ buscador de TVs
+
+    private static final int REQ_SCAN = 12;
+    private TvScanner scanner;
+    private long scanStartedAt;
+    private boolean autoPicked;
+
+    private void showScanner() {
+        final View overlay = findViewById(R.id.scanOverlay);
+        if (overlay.getVisibility() != View.VISIBLE) {
+            overlay.setVisibility(View.VISIBLE);
+            overlay.setAlpha(0f);
+            overlay.animate().alpha(1f).setDuration(220).start();
+            findViewById(R.id.scanPower).setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                if (!ir.hasEmitter()) {
+                    toast("Este celular no tiene infrarrojo");
+                } else if (ir.canPowerQuickly()) {
+                    ir.power(null);
+                    toast("Encendiendo la TV… aparecerá en unos segundos");
+                } else {
+                    hideScanner();
+                    onPower(false); // barrido universal de encendido
+                }
+            });
+            findViewById(R.id.scanSystem).setOnClickListener(v -> {
+                hideScanner();
+                castViaSystemList();
+            });
+            findViewById(R.id.scanClose).setOnClickListener(v -> hideScanner());
+            for (int id : new int[]{R.id.scanPower, R.id.scanSystem, R.id.scanClose}) pressFx(findViewById(id));
+        }
+        ((RadarView) findViewById(R.id.radar)).setRunning(true);
+        ((RadarView) findViewById(R.id.radar)).setDevices(new ArrayList<>());
+        ((LinearLayout) findViewById(R.id.scanList)).removeAllViews();
+        setScanStatus("Sin red WiFi: el celular busca las TVs y se conecta directo a ellas");
+        scanStartedAt = System.currentTimeMillis();
+        autoPicked = false;
+        if (scanner == null) scanner = new TvScanner(this);
+        scanner.start(new TvScanner.Listener() {
+            @Override
+            public void onFound(List<TvScanner.Found> tvs) {
+                showFound(tvs);
+            }
+
+            @Override
+            public void onError(String message) {
+                setScanStatus(message);
+            }
+        });
+        handler.removeCallbacks(scanHint);
+        handler.postDelayed(scanHint, 12000);
+    }
+
+    private final Runnable scanHint = () -> {
+        View overlay = findViewById(R.id.scanOverlay);
+        if (overlay.getVisibility() == View.VISIBLE && ((LinearLayout) findViewById(R.id.scanList)).getChildCount() == 0) {
+            setScanStatus("Aún no aparece ninguna TV. Revisa:\n"
+                    + "• Que la TV esté encendida (botón «Encender TV»).\n"
+                    + "• En la TV, abre «Screen Mirroring / Duplicar pantalla / Screen Share / Anyview Cast».\n"
+                    + "• Si tu TV solo tiene Chromecast, no se puede sin la misma red WiFi.");
+        }
+    };
+
+    private void setScanStatus(String s) {
+        ((TextView) findViewById(R.id.scanStatus)).setText(s);
+    }
+
+    private void showFound(List<TvScanner.Found> tvs) {
+        ((RadarView) findViewById(R.id.radar)).setDevices(tvs);
+        LinearLayout list = findViewById(R.id.scanList);
+        list.removeAllViews();
+        int good = 0;
+        for (final TvScanner.Found f : tvs) {
+            if (f.kind != TvScanner.KIND_OTHER) good++;
+            list.addView(foundRow(f));
+        }
+        setScanStatus(tvs.isEmpty() ? "Buscando…" : good + " televisor(es) encontrados · toca uno para proyectar");
+
+        // Si aparece la TV que ya usaste antes, se conecta sola.
+        String saved = CastFlow.tvName(this);
+        if (saved != null && !autoPicked) {
+            for (TvScanner.Found f : tvs) {
+                if (f.name.equalsIgnoreCase(saved)) {
+                    autoPicked = true;
+                    setScanStatus("Encontré «" + f.name + "»: conectando…");
+                    handler.postDelayed(() -> pickTv(f), 700);
+                    break;
+                }
+            }
+        }
+    }
+
+    private View foundRow(final TvScanner.Found f) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundResource(R.drawable.bg_click);
+        row.setPadding(dp(14), dp(10), dp(14), dp(10));
+        row.setClickable(true);
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(R.drawable.ic_cast);
+        int color = f.kind == TvScanner.KIND_SINK ? 0xFF3FBF7F
+                : f.kind == TvScanner.KIND_OTHER ? getResources().getColor(R.color.muted) : getResources().getColor(R.color.accent);
+        icon.setImageTintList(ColorStateList.valueOf(color));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(dp(14), 0, 0, 0);
+        TextView name = new TextView(this);
+        name.setText(f.name);
+        name.setTextColor(getResources().getColor(R.color.ink));
+        name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        TextView sub = new TextView(this);
+        sub.setText(TvScanner.kindLabel(f.kind));
+        sub.setTextColor(getResources().getColor(R.color.muted));
+        sub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        texts.addView(name);
+        texts.addView(sub);
+        row.addView(texts, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            pickTv(f);
+        });
+        pressFx(row);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = dp(8);
+        row.setLayoutParams(lp);
+        row.setAlpha(0f);
+        row.setTranslationY(dp(10));
+        row.animate().alpha(1f).translationY(0).setDuration(240).start();
+        return row;
+    }
+
+    /** Proyecta en la TV elegida: abre la proyección del sistema y la toca automáticamente. */
+    private void pickTv(TvScanner.Found f) {
+        if (findViewById(R.id.scanOverlay).getVisibility() != View.VISIBLE) return;
+        CastFlow.setTvName(this, f.name);
+        refreshCast();
+        hideScanner();
+        // Pequeña pausa para liberar el Wi-Fi Direct antes de que el sistema conecte.
+        handler.postDelayed(() -> {
+            if (!CastFlow.startDirect(this)) toast("No encontré el menú de Transmitir del celular");
+            else toast("Conectando con «" + f.name + "»…");
+        }, 600);
+    }
+
+    private void hideScanner() {
+        handler.removeCallbacks(scanHint);
+        if (scanner != null) scanner.stop();
+        final View overlay = findViewById(R.id.scanOverlay);
+        ((RadarView) findViewById(R.id.radar)).setRunning(false);
+        overlay.animate().alpha(0f).setDuration(180).withEndAction(() -> overlay.setVisibility(View.GONE)).start();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (scanner != null && findViewById(R.id.scanOverlay).getVisibility() == View.VISIBLE) scanner.stop();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (scanner != null && findViewById(R.id.scanOverlay).getVisibility() == View.VISIBLE) showScanner();
+    }
+
     private void onResumeCastIfReady() {
-        if (pendingCastAfterWifi && wifiRadioOn()) {
+        if (pendingCastAfterWifi && wifiRadioOn() && TvScanner.locationOk(this)) {
             pendingCastAfterWifi = false;
             handler.postDelayed(this::onCast, 600);
         }

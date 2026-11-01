@@ -21,7 +21,9 @@ que controla la TV **sin tener que buscar la marca**.
 
 ## Proyectar en la TV con un toque
 
-El botón azul **«Proyectar en la TV»** conecta la pantalla del celular a la TV:
+El botón azul **«Proyectar en la TV»** abre un **buscador de televisores cercanos** (radar) que detecta por
+Wi-Fi Direct las TVs que aceptan proyección directa, **sin red WiFi ni router**. Tocas una TV y la app la
+conecta sola (si ya la usaste antes, se conecta automáticamente en cuanto aparece). Debajo:
 
 1. Abre el menú de **Transmitir** del celular (en Xiaomi, el botón «Transmitir» del panel rápido).
 2. Toca automáticamente el nombre de tu TV en la lista.
