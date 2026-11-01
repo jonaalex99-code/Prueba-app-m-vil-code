@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bg">#FF0B0B0D</color>
+    <color name="surface">#FF1F1F23</color>
+    <color name="surface_hi">#FF2A2A30</color>
+    <color name="pad">#FF16161A</color>
+    <color name="ink">#FFF2F2F5</color>
+    <color name="muted">#FF9A9AA3</color>
+    <color name="line">#33FFFFFF</color>
+    <color name="power">#FFD64A3F</color>
+    <color name="accent">#FF5B8CFF</color>
+    <color name="ok_green">#FF3FBF7F</color>
+    <color name="ripple">#33FFFFFF</color>
+</resources>

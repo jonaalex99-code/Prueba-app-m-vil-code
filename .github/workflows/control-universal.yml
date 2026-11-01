@@ -1,0 +1,27 @@
+name: Control Universal APK
+
+on:
+  push:
+    paths:
+      - 'control-universal/**'
+      - '.github/workflows/control-universal.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: control-universal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Compilar APK
+        run: ./gradlew assembleRelease --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ControlUniversal
+          path: control-universal/app/build/outputs/apk/release/app-release.apk
