@@ -461,8 +461,52 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
         bindKey(R.id.mVolUp, "vol_up");
         bindKey(R.id.mVolDn, "vol_dn");
 
+        JoystickView joy = findViewById(R.id.joystick);
+        joy.setListener(new JoystickView.Listener() {
+            @Override
+            public void onMove(float dx, float dy) {
+                if (bt.isConnected()) bt.move(dx, dy);
+            }
+
+            @Override
+            public void onWheel(int ticks) {
+                if (bt.isConnected()) bt.wheel(ticks);
+                else send(ticks > 0 ? "up" : "down");
+            }
+
+            @Override
+            public void onClick() {
+                if (bt.isConnected()) bt.click(1);
+                else send("ok");
+            }
+        });
+        findViewById(R.id.segPad).setOnClickListener(v -> selectMouseMode(false, true));
+        findViewById(R.id.segJoy).setOnClickListener(v -> selectMouseMode(true, true));
+
         setupCalibration();
+        selectMouseMode(prefs.getBoolean("mouse_joystick", false), false);
         setupBtCard(findViewById(R.id.mouseBt));
+    }
+
+    private void selectMouseMode(boolean joystick, boolean fromUser) {
+        TextView a = findViewById(R.id.segPad), b = findViewById(R.id.segJoy);
+        a.setBackgroundResource(joystick ? 0 : R.drawable.bg_seg_on);
+        b.setBackgroundResource(joystick ? R.drawable.bg_seg_on : 0);
+        int on = getResources().getColor(R.color.ink), off = getResources().getColor(R.color.muted);
+        a.setTextColor(joystick ? off : on);
+        b.setTextColor(joystick ? on : off);
+        View show = findViewById(joystick ? R.id.joystick : R.id.touchpad);
+        View hide = findViewById(joystick ? R.id.touchpad : R.id.joystick);
+        hide.setVisibility(View.GONE);
+        if (show.getVisibility() != View.VISIBLE) {
+            show.setVisibility(View.VISIBLE);
+            show.setAlpha(0f);
+            show.setScaleX(0.96f);
+            show.setScaleY(0.96f);
+            show.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(200).start();
+        }
+        prefs.edit().putBoolean("mouse_joystick", joystick).apply();
+        if (fromUser && joystick && !bt.isConnected()) toast("El joystick mueve el cursor por Bluetooth: conecta la TV primero");
     }
 
     // ------------------------------------------------------------------ calibración del mouse
@@ -566,6 +610,13 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setPadding(0, dp(6), 0, 0);
+        // Prueba de diagnóstico: un movimiento grande y fijo, sin depender del dedo.
+        LinearLayout test = new LinearLayout(this);
+        test.setOrientation(LinearLayout.HORIZONTAL);
+        test.addView(chip("Prueba ← 1000", v -> runMoveTest(-1)), weighted());
+        test.addView(chip("Prueba 1000 →", v -> runMoveTest(1)), weighted());
+        card.addView(test);
+
         actions.addView(chip("Asistente", v -> startAssist()), weighted());
         actions.addView(chip("Restablecer", v -> resetCalibration()), weighted());
         TextView done = chip("Listo", v -> toggleCalibration(false));
@@ -652,6 +703,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
 
     private void applyCalibration() {
         pad.setSensitivity(calSpeed);
+        ((JoystickView) findViewById(R.id.joystick)).setSpeed(calSpeed);
         pad.setAcceleration(calAccel);
         bt.setMouseTuning(calInterval, calMax);
         java.util.Locale L = java.util.Locale.ROOT;
@@ -735,6 +787,24 @@ public class MainActivity extends Activity implements IrEngine.SweepListener, Bt
             handler.postDelayed(this, 500);
         }
     };
+
+    /**
+     * Envía 10 paquetes de 100 (1000 en total) hacia un lado. Si el enlace y la TV funcionan,
+     * el cursor debe saltar más o menos media pantalla.
+     */
+    private void runMoveTest(int dir) {
+        if (!bt.isConnected()) {
+            toast("Conecta la TV por Bluetooth primero");
+            return;
+        }
+        for (int i = 0; i < 10; i++) {
+            handler.postDelayed(() -> bt.move(100 * dir, 0), i * 30L);
+        }
+        calAssistText.setVisibility(View.VISIBLE);
+        calAssistText.setText("Prueba enviada: 1000 hacia " + (dir > 0 ? "la derecha" : "la izquierda")
+                + ". Lo normal es que el cursor salte cerca de media pantalla. Si solo se movió un poquito, "
+                + "dime cuánto: eso indica que la TV reduce o pierde el movimiento.");
+    }
 
     private void startAssist() {
         calAssistText.setText("Desliza el dedo de lado a lado del panel, a velocidad normal. "

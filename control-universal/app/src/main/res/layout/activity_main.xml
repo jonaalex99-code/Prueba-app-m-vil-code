@@ -380,12 +380,52 @@
                 android:id="@+id/mouseBt"
                 layout="@layout/bt_card" />
 
-            <com.jonaalex.controluniversal.TouchpadView
-                android:id="@+id/touchpad"
+            <!-- Selector Panel / Joystick -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/bg_seg"
+                android:orientation="horizontal"
+                android:padding="2dp">
+
+                <TextView
+                    android:id="@+id/segPad"
+                    android:layout_width="104dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="Panel"
+                    android:textColor="@color/ink"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/segJoy"
+                    android:layout_width="104dp"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:text="Joystick"
+                    android:textColor="@color/muted"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_marginTop="12dp"
-                android:layout_weight="1" />
+                android:layout_marginTop="10dp"
+                android:layout_weight="1">
+
+                <com.jonaalex.controluniversal.TouchpadView
+                    android:id="@+id/touchpad"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <com.jonaalex.controluniversal.JoystickView
+                    android:id="@+id/joystick"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:visibility="gone" />
+            </FrameLayout>
 
             <!-- Panel de calibración (se llena desde el código) -->
             <LinearLayout

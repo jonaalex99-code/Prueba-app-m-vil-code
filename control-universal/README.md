@@ -74,6 +74,10 @@ Emparejar (una sola vez): toca **Bluetooth** (arriba a la derecha) › *Empareja
 | Arrastrar con dos dedos / franja derecha | Desplazar (rueda) |
 | Mantener presionado y mover | Arrastrar |
 
+**Joystick**: en la sección Mouse elige *Joystick* (arriba del panel). Mantén el dedo inclinado hacia un
+lado y el cursor avanza solo y de forma continua (más lejos del centro = más rápido); tocar sin mover = clic;
+la franja derecha desplaza.
+
 **Calibrar el mouse**: en la sección Mouse toca el botón azul de ajustes. Se abre un panel que aplica
 los cambios al instante mientras pruebas en el panel táctil:
 
