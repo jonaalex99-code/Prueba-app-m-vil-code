@@ -19,6 +19,31 @@ que controla la TV **sin tener que buscar la marca**.
 - El botón de arriba a la derecha cambia el modo: *Universal*, *Detectar mi TV* o elegir la marca a mano (opcional).
 - Sin detectar, cada botón se envía a las 12 familias de códigos más comunes (tarda ~1 s por toque).
 
+## Proyectar en la TV con un toque
+
+El botón azul **«Proyectar en la TV»** conecta la pantalla del celular a la TV:
+
+1. Abre el menú de **Transmitir** del celular (en Xiaomi, el botón «Transmitir» del panel rápido).
+2. Toca automáticamente el nombre de tu TV en la lista.
+3. Si la TV no aparece en ~6 s (está apagada), la **enciende por infrarrojo** y sigue esperando hasta 45 s.
+
+Configuración (una sola vez):
+- Al tocar el botón, la app pide activar **Accesibilidad › Control Universal**. Solo se usa unos segundos
+  después de tocar «Proyectar», para tocar el nombre de la TV. Si Android muestra «Configuración restringida»:
+  *Info de la app › ⋮ › Permitir configuración restringida*.
+- La primera vez toca tú el nombre de tu TV en la lista: la app lo recuerda y desde entonces se conecta sola.
+- Para que la TV se encienda sola, primero detecta tu TV con el botón rojo (ver arriba).
+- Mantén presionado el botón azul para cambiar la forma de proyectar (panel rápido, Ajustes o
+  Google Home para TVs con Chromecast/Google TV), olvidar la TV o desactivar el encendido automático.
+
+Límites (de Android y de las TVs, no de la app):
+- Android no deja que una app inicie la proyección por sí sola; por eso se usa Accesibilidad para "tocar" el menú.
+- La TV debe soportar proyección: Miracast / Screen Mirroring / Smart View (Samsung, LG, Hisense, TCL, Sony…)
+  o Chromecast integrado (Google TV / Android TV). Miracast se conecta directo, sin necesidad de WiFi;
+  Chromecast necesita que TV y celular estén en la misma red WiFi.
+- Ninguna app puede conectar la TV a tu red WiFi: eso se configura una vez en la TV.
+- Algunas TVs (LG, Samsung) preguntan «¿Permitir conexión?» la primera vez: acepta con el control.
+
 ## Panel táctil
 
 La pestaña **Panel táctil** funciona como el touchpad de un mouse para moverte por los menús:

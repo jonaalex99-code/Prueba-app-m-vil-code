@@ -25,4 +25,7 @@
     <string name="ok">OK</string>
     <string name="hit">¡Ya prendió!</string>
     <string name="stop">Detener</string>
+    <string name="cast_service_label">Control Universal · Proyectar con un toque</string>
+    <string name="cast_service_desc">Solo funciona durante unos segundos después de tocar «Proyectar» en la app: abre el menú de Transmitir del celular y toca el nombre de tu TV para conectarla automáticamente. Si la TV no aparece, la enciende por infrarrojo. No lee, guarda ni envía nada más.</string>
+    <string name="cast">Proyectar en la TV</string>
 </resources>

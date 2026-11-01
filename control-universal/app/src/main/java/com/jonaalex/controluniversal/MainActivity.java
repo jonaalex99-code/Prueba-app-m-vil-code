@@ -44,7 +44,7 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-        ir = new IrEngine(this);
+        ir = IrEngine.get(this);
 
         status = findViewById(R.id.status);
         modeChip = findViewById(R.id.modeChip);
@@ -134,11 +134,162 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
             }
         });
 
+        View cast = findViewById(R.id.btnCast);
+        cast.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                onCast();
+            }
+        });
+        cast.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                showCastOptions();
+                return true;
+            }
+        });
+
         refreshMode();
         if (!ir.hasEmitter()) {
             status.setText("Este celular no tiene emisor infrarrojo (IR). La app necesita un teléfono con infrarrojo.");
             status.setTextColor(getResources().getColor(R.color.power));
         }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshCast();
+        if (pendingCastAfterSetup && CastFlow.serviceEnabled(this)) {
+            pendingCastAfterSetup = false;
+            onCast();
+        }
+    }
+
+    // ------------------------------------------------------------------ proyectar
+
+    private boolean pendingCastAfterSetup;
+
+    private void refreshCast() {
+        TextView sub = findViewById(R.id.castSub);
+        String name = CastFlow.tvName(this);
+        if (!CastFlow.serviceEnabled(this)) {
+            sub.setText("Toca para activar la conexión automática");
+        } else if (name == null) {
+            sub.setText("Primera vez: elige tu TV en la lista");
+        } else {
+            sub.setText(name + " · mantén presionado para opciones");
+        }
+    }
+
+    private void onCast() {
+        if (!CastFlow.serviceEnabled(this)) {
+            showCastSetup();
+            return;
+        }
+        if (CastFlow.tvName(this) == null) {
+            toast("Toca el nombre de tu TV en la lista. La app lo recordará para la próxima vez.");
+        }
+        if (!CastFlow.start(this, true)) {
+            toast("No encontré el menú de Transmitir. Ábrelo en el panel rápido del celular.");
+        }
+    }
+
+    private void showCastSetup() {
+        new AlertDialog.Builder(this)
+                .setTitle("Proyectar con un solo toque")
+                .setMessage("Para que la TV se conecte sola, activa una vez el permiso de Accesibilidad. "
+                        + "La app solo lo usa unos segundos después de tocar «Proyectar», para tocar el nombre "
+                        + "de tu TV en el menú de Transmitir (y encenderla por infrarrojo si está apagada).\n\n"
+                        + "1. Toca «Activar».\n"
+                        + "2. Busca «Control Universal» (en Xiaomi está en «Apps descargadas») y actívalo.\n\n"
+                        + "Si Android dice «Configuración restringida»: toca «Info de la app», luego ⋮ (arriba a la "
+                        + "derecha) › «Permitir configuración restringida», y vuelve a intentarlo.")
+                .setPositiveButton("Activar", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        pendingCastAfterSetup = true;
+                        try {
+                            startActivity(new android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                        } catch (Exception e) {
+                            toast("Abre Ajustes › Accesibilidad");
+                        }
+                    }
+                })
+                .setNeutralButton("Info de la app", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        pendingCastAfterSetup = true;
+                        startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.parse("package:" + getPackageName())));
+                    }
+                })
+                .setNegativeButton("Proyectar a mano", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        if (!CastFlow.start(MainActivity.this, false)) {
+                            toast("Abre «Transmitir» en el panel rápido del celular y toca tu TV.");
+                        }
+                    }
+                })
+                .show();
+    }
+
+    private void showCastOptions() {
+        final String name = CastFlow.tvName(this);
+        final boolean power = CastFlow.powerIfMissing(this);
+        String[] items = {
+                "Forma de proyectar: " + CastFlow.methodLabel(CastFlow.method(this)),
+                "Encender la TV si no aparece: " + (power ? "Sí" : "No"),
+                name == null ? "TV guardada: ninguna" : "Olvidar la TV guardada («" + name + "»)",
+                "Permiso de accesibilidad"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Proyectar")
+                .setItems(items, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        if (which == 0) {
+                            showMethodDialog();
+                        } else if (which == 1) {
+                            CastFlow.setPowerIfMissing(MainActivity.this, !power);
+                            toast(!power ? "Se encenderá la TV si no aparece" : "No se encenderá la TV");
+                        } else if (which == 2 && name != null) {
+                            CastFlow.setTvName(MainActivity.this, null);
+                            refreshCast();
+                            toast("La próxima vez elige tu TV en la lista");
+                        } else if (which == 3) {
+                            startActivity(new android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                        }
+                    }
+                })
+                .show();
+    }
+
+    private void showMethodDialog() {
+        final String[] methods = {CastFlow.METHOD_PANEL, CastFlow.METHOD_SETTINGS, CastFlow.METHOD_HOME};
+        String[] labels = new String[methods.length];
+        int checked = 0;
+        String cur = CastFlow.method(this);
+        for (int i = 0; i < methods.length; i++) {
+            labels[i] = CastFlow.methodLabel(methods[i]);
+            if (methods[i].equals(cur)) checked = i;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Forma de proyectar")
+                .setSingleChoiceItems(labels, checked, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int which) {
+                        CastFlow.setMethod(MainActivity.this, methods[which]);
+                        CastFlow.setTvName(MainActivity.this, null);
+                        refreshCast();
+                        d.dismiss();
+                        toast("Listo. La próxima vez elige tu TV en la lista.");
+                    }
+                })
+                .show();
     }
 
     // ------------------------------------------------------------------ teclas

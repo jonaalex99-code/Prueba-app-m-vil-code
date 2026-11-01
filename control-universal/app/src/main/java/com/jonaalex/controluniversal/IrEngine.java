@@ -85,7 +85,15 @@ public class IrEngine {
     private final List<long[]> sweepLog = Collections.synchronizedList(new ArrayList<long[]>());
     private TxListener txListener;
 
-    public IrEngine(Context ctx) {
+    private static IrEngine instance;
+
+    /** Instancia compartida entre la pantalla y el servicio de proyección. */
+    public static synchronized IrEngine get(Context ctx) {
+        if (instance == null) instance = new IrEngine(ctx.getApplicationContext());
+        return instance;
+    }
+
+    private IrEngine(Context ctx) {
         ir = (ConsumerIrManager) ctx.getSystemService(Context.CONSUMER_IR_SERVICE);
         prefs = ctx.getSharedPreferences("control", Context.MODE_PRIVATE);
         try {
@@ -290,6 +298,11 @@ public class IrEngine {
     /** true si al presionar Encender se hará el barrido completo. */
     public boolean powerNeedsSweep() {
         return active.isEmpty() && learnedPower.isEmpty();
+    }
+
+    /** true si ya se conoce el código de encendido de la TV (envío de un solo toque). */
+    public boolean canPowerQuickly() {
+        return !powerNeedsSweep();
     }
 
     /** Botón de encendido: rápido si ya se detectó la TV; si no, barrido completo. */

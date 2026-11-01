@@ -4,6 +4,18 @@
     <uses-permission android:name="android.permission.TRANSMIT_IR" />
     <uses-feature android:name="android.hardware.consumerir" android:required="false" />
 
+    <!-- Apps y pantallas que se abren para proyectar (visibilidad de paquetes, Android 11+) -->
+    <queries>
+        <package android:name="com.google.android.apps.chromecast.app" />
+        <package android:name="com.samsung.android.smartmirroring" />
+        <intent>
+            <action android:name="android.settings.CAST_SETTINGS" />
+        </intent>
+        <intent>
+            <action android:name="android.settings.WIFI_DISPLAY_SETTINGS" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -19,5 +31,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".CastService"
+            android:exported="true"
+            android:label="@string/cast_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/cast_service" />
+        </service>
     </application>
 </manifest>
