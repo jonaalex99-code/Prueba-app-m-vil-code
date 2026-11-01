@@ -1,38 +1,70 @@
 package com.jonaalex.controluniversal;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.DialogInterface;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
+import android.view.animation.OvershootInterpolator;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.ImageButton;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
+import android.widget.SeekBar;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public class MainActivity extends Activity implements IrEngine.SweepListener {
+public class MainActivity extends Activity implements IrEngine.SweepListener, BtHid.Listener {
+
+    private static final int REQ_BT_PERMS = 10;
+    private static final int REQ_BT_ENABLE = 11;
 
     private IrEngine ir;
+    private BtHid bt;
+    private SharedPreferences prefs;
     private final Handler handler = new Handler(Looper.getMainLooper());
 
-    private TextView status, modeChip, bannerText;
-    private View banner, irDot;
+    private TextView modeChip, bannerText, btText;
+    private ImageView btIcon;
+    private View banner, irDot, navPill;
     private ProgressBar bannerProgress;
     private Button bannerYes, bannerNo;
-    private TextView[] tabs;
-    private View[] tabLines, tabPages;
+    private ImageButton powerBtn;
+    private TouchpadView pad;
+    private EditText textInput;
+    private Switch liveSwitch;
+    private View[] pages, navItems;
+    private ImageView[] navIcons;
+    private TextView[] navTexts;
+    private int page = -1;
+    private ValueAnimator powerPulse;
 
-    // Estado del afinado de la detección
+    // Detección de la TV por infrarrojo
     private enum Banner { NONE, SWEEP, SWEEP_DONE, REFINE_READY, REFINE_ASK, INFO }
 
     private Banner bannerState = Banner.NONE;
@@ -40,13 +72,19 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
     private List<IrEngine.Family> testGroup = new ArrayList<>();
     private int volumeUps;
 
+    // Teclado en vivo
+    private String lastText = "";
+    private boolean suppressWatcher;
+    private boolean pendingCastAfterSetup;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        prefs = getSharedPreferences("control", MODE_PRIVATE);
         ir = IrEngine.get(this);
+        bt = BtHid.get(this);
 
-        status = findViewById(R.id.status);
         modeChip = findViewById(R.id.modeChip);
         irDot = findViewById(R.id.irDot);
         banner = findViewById(R.id.banner);
@@ -54,14 +92,151 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
         bannerProgress = findViewById(R.id.bannerProgress);
         bannerYes = findViewById(R.id.bannerYes);
         bannerNo = findViewById(R.id.bannerNo);
+        btText = findViewById(R.id.btText);
+        btIcon = findViewById(R.id.btIcon);
+        powerBtn = findViewById(R.id.btnPower);
 
-        ir.setTxListener(new IrEngine.TxListener() {
-            @Override
-            public void onTransmit(boolean active) {
-                irDot.animate().alpha(active ? 1f : 0.15f).setDuration(active ? 40 : 250).start();
+        ir.setTxListener(active -> irDot.animate().alpha(active ? 1f : 0.15f)
+                .scaleX(active ? 1.4f : 1f).scaleY(active ? 1.4f : 1f).setDuration(active ? 40 : 250).start());
+
+        setupControlPage();
+        setupMousePage();
+        setupKeyboardPage();
+        setupNav();
+
+        findViewById(R.id.btChip).setOnClickListener(v -> onBtAction());
+        bannerYes.setOnClickListener(v -> onBannerYes());
+        bannerNo.setOnClickListener(v -> onBannerNo());
+        pressFx(findViewById(R.id.btChip));
+        pressFx(bannerYes);
+        pressFx(bannerNo);
+
+        refreshMode();
+        bt.addListener(this);
+        // Reconecta solo a la TV Bluetooth guardada.
+        if (bt.isSupported() && BtHid.hasPermission(this) && bt.adapterEnabled() && bt.savedAddress() != null) {
+            bt.start();
+        }
+        if (!prefs.getBoolean("intro_shown", false) && ir.hasEmitter() && ir.isUniversal()) {
+            prefs.edit().putBoolean("intro_shown", true).apply();
+            handler.postDelayed(() -> showInfo("Consejo: toca el botón rojo apuntando a la TV y, cuando prenda, "
+                    + "toca «¡Ya prendió!». Así el control reconoce tu TV y responde al instante."), 600);
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        refreshCast();
+        if (pendingCastAfterSetup && CastFlow.serviceEnabled(this)) {
+            pendingCastAfterSetup = false;
+            onCast();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        bt.removeListener(this);
+        ir.setTxListener(null);
+        if (isFinishing()) bt.shutdown();
+        super.onDestroy();
+    }
+
+    // ================================================================== secciones
+
+    private void setupNav() {
+        pages = new View[]{findViewById(R.id.pageControl), findViewById(R.id.pageMouse), findViewById(R.id.pageKeyboard)};
+        navItems = new View[]{findViewById(R.id.navControl), findViewById(R.id.navMouse), findViewById(R.id.navKeyboard)};
+        navIcons = new ImageView[]{findViewById(R.id.navControlIcon), findViewById(R.id.navMouseIcon), findViewById(R.id.navKeyboardIcon)};
+        navTexts = new TextView[]{findViewById(R.id.navControlText), findViewById(R.id.navMouseText), findViewById(R.id.navKeyboardText)};
+        navPill = findViewById(R.id.navPill);
+        for (int i = 0; i < navItems.length; i++) {
+            final int idx = i;
+            navItems[i].setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                showPage(idx, true);
+            });
+        }
+        final int saved = prefs.getInt("page", 0);
+        navItems[0].post(() -> showPage(saved, false));
+    }
+
+    private void showPage(int idx, boolean animate) {
+        if (idx == page) return;
+        int old = page;
+        page = idx;
+        prefs.edit().putInt("page", idx).apply();
+        float shift = dp(36) * (old < idx ? 1 : -1);
+        for (int i = 0; i < pages.length; i++) {
+            final View p = pages[i];
+            if (i == idx) {
+                p.setVisibility(View.VISIBLE);
+                if (animate) {
+                    p.setAlpha(0f);
+                    p.setTranslationX(shift);
+                    p.animate().alpha(1f).translationX(0).setDuration(240)
+                            .setInterpolator(new DecelerateInterpolator(2f)).withEndAction(null).start();
+                }
+            } else if (i == old && animate) {
+                p.animate().alpha(0f).translationX(-shift * 0.6f).setDuration(160)
+                        .withEndAction(() -> {
+                            p.setVisibility(View.GONE);
+                            p.setAlpha(1f);
+                            p.setTranslationX(0);
+                        }).start();
+            } else {
+                p.setVisibility(View.GONE);
             }
-        });
+        }
+        // Indicador animado de la barra inferior
+        View item = navItems[idx];
+        float target = item.getLeft() + (item.getWidth() - navPill.getWidth()) / 2f;
+        if (animate) {
+            navPill.animate().translationX(target).setDuration(280).setInterpolator(new OvershootInterpolator(1.2f)).start();
+        } else {
+            navPill.setTranslationX(target);
+        }
+        int on = getResources().getColor(R.color.ink), off = getResources().getColor(R.color.muted);
+        for (int i = 0; i < navIcons.length; i++) {
+            boolean sel = i == idx;
+            navIcons[i].setImageTintList(ColorStateList.valueOf(sel ? on : off));
+            navTexts[i].setTextColor(sel ? on : off);
+            if (sel && animate) {
+                navIcons[i].setScaleX(0.7f);
+                navIcons[i].setScaleY(0.7f);
+                navIcons[i].animate().scaleX(1f).scaleY(1f).setDuration(320).setInterpolator(new OvershootInterpolator(3f)).start();
+            }
+        }
+        onStateChanged(bt.state(), bt.deviceName());
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (idx == 2) {
+            textInput.requestFocus();
+            if (bt.isConnected()) handler.postDelayed(() -> imm.showSoftInput(textInput, 0), 250);
+        } else if (imm != null) {
+            imm.hideSoftInputFromWindow(textInput.getWindowToken(), 0);
+        }
+    }
 
+    /** Animación al presionar: el botón se encoge y rebota al soltar. */
+    private void pressFx(final View v) {
+        v.setOnTouchListener((view, e) -> {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(70).setInterpolator(null).start();
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(260)
+                            .setInterpolator(new OvershootInterpolator(4f)).start();
+                    break;
+            }
+            return false;
+        });
+    }
+
+    // ================================================================== CONTROL
+
+    private void setupControlPage() {
         bindKey(R.id.btnInput, "source");
         bindKey(R.id.btnMute, "mute");
         bindKey(R.id.btnVolUp, "vol_up");
@@ -71,30 +246,164 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
         bindKey(R.id.btnHome, "home");
         bindKey(R.id.btnMenu, "menu");
         bindKey(R.id.btnBack, "back");
-        bindKey(R.id.btnUp, "up");
-        bindKey(R.id.btnDown, "down");
-        bindKey(R.id.btnLeft, "left");
-        bindKey(R.id.btnRight, "right");
-        bindKey(R.id.btnOk, "ok");
 
-        ImageButton power = findViewById(R.id.btnPower);
-        power.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                onPower(false);
+        powerBtn.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            onPower(false);
+        });
+        powerBtn.setOnLongClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            onPower(true);
+            return true;
+        });
+        pressFx(powerBtn);
+
+        // En pantallas bajas, los botones centrales se achican para que todo quepa sin scroll.
+        final LinearLayout col = findViewById(R.id.centerCol);
+        col.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            int h = b - t;
+            if (h == ob - ot && col.getTag() != null) return;
+            col.setTag(h);
+            int size = Math.max(dp(36), Math.min(dp(52), (h - dp(16)) / 3));
+            for (int i = 0; i < col.getChildCount(); i++) {
+                View c = col.getChildAt(i);
+                LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) c.getLayoutParams();
+                if (lp.height != size) {
+                    lp.width = lp.height = size;
+                    c.setLayoutParams(lp);
+                }
             }
         });
-        power.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                onPower(true);
-                return true;
-            }
-        });
 
-        TouchpadView pad = findViewById(R.id.touchpad);
+        DpadView dpad = findViewById(R.id.dpad);
+        dpad.setListener(this::send);
+
+        View cast = findViewById(R.id.btnCast);
+        cast.setOnClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            onCast();
+        });
+        cast.setOnLongClickListener(v -> {
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showCastOptions();
+            return true;
+        });
+        pressFx(cast);
+
+        modeChip.setOnClickListener(v -> showModeDialog());
+        pressFx(modeChip);
+
+        final TextView segA = findViewById(R.id.segArrows), segN = findViewById(R.id.segNumbers);
+        segA.setOnClickListener(v -> selectSeg(false));
+        segN.setOnClickListener(v -> selectSeg(true));
+        buildNumbers();
+        selectSeg(prefs.getBoolean("seg_numbers", false));
+    }
+
+    private void selectSeg(boolean numbers) {
+        TextView segA = findViewById(R.id.segArrows), segN = findViewById(R.id.segNumbers);
+        segA.setBackgroundResource(numbers ? 0 : R.drawable.bg_seg_on);
+        segN.setBackgroundResource(numbers ? R.drawable.bg_seg_on : 0);
+        int on = getResources().getColor(R.color.ink), off = getResources().getColor(R.color.muted);
+        segA.setTextColor(numbers ? off : on);
+        segN.setTextColor(numbers ? on : off);
+        View show = findViewById(numbers ? R.id.numbers : R.id.dpad);
+        View hide = findViewById(numbers ? R.id.dpad : R.id.numbers);
+        hide.setVisibility(View.GONE);
+        if (show.getVisibility() != View.VISIBLE) {
+            show.setVisibility(View.VISIBLE);
+            show.setAlpha(0f);
+            show.setScaleX(0.94f);
+            show.setScaleY(0.94f);
+            show.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(220).start();
+        }
+        prefs.edit().putBoolean("seg_numbers", numbers).apply();
+    }
+
+    private void buildNumbers() {
+        LinearLayout grid = findViewById(R.id.numbers);
+        String[][] rows = {{"1", "2", "3"}, {"4", "5", "6"}, {"7", "8", "9"}, {"ok", "0", "back"}};
+        for (String[] row : rows) {
+            LinearLayout line = new LinearLayout(this);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            grid.addView(line, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+            for (final String k : row) {
+                View b;
+                if (k.equals("back")) {
+                    ImageButton ib = new ImageButton(this);
+                    ib.setImageResource(R.drawable.ic_back);
+                    ib.setColorFilter(getResources().getColor(R.color.ink));
+                    ib.setContentDescription(getString(R.string.d_back));
+                    b = ib;
+                } else {
+                    TextView tv = new TextView(this);
+                    tv.setText(k.equals("ok") ? "OK" : k);
+                    tv.setTextColor(getResources().getColor(R.color.ink));
+                    tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, k.equals("ok") ? 17 : 24);
+                    tv.setGravity(Gravity.CENTER);
+                    b = tv;
+                }
+                b.setBackgroundResource(R.drawable.bg_click);
+                b.setClickable(true);
+                b.setOnClickListener(v -> {
+                    v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                    send(k);
+                });
+                pressFx(b);
+                LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f);
+                bp.setMargins(dp(5), dp(4), dp(5), dp(4));
+                line.addView(b, bp);
+            }
+        }
+    }
+
+    private void bindKey(int id, final String key) {
+        View v = findViewById(id);
+        v.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            send(key);
+        });
+        pressFx(v);
+    }
+
+    /**
+     * Envía una tecla. Si hay una TV conectada por Bluetooth, la navegación y el
+     * volumen van por Bluetooth (no hace falta apuntar); lo demás va por infrarrojo.
+     */
+    private void send(String key) {
+        if (bt.isConnected() && sendBt(key)) return;
+        if (!ir.hasEmitter()) {
+            toast(bt.isSupported() ? "Sin infrarrojo: conecta la TV por Bluetooth" : "Este celular no tiene infrarrojo");
+            return;
+        }
+        if (ir.isSweeping()) {
+            toast("Buscando tu TV… toca «¡Ya prendió!» o «Detener» primero");
+            return;
+        }
+        ir.sendKey(key);
+    }
+
+    private boolean sendBt(String key) {
+        switch (key) {
+            case "up": bt.key(BtHid.K_UP, 0); return true;
+            case "down": bt.key(BtHid.K_DOWN, 0); return true;
+            case "left": bt.key(BtHid.K_LEFT, 0); return true;
+            case "right": bt.key(BtHid.K_RIGHT, 0); return true;
+            case "ok": bt.key(BtHid.K_ENTER, 0); return true;
+            case "back": bt.consumer(BtHid.CC_BACK); return true;
+            case "home": bt.consumer(BtHid.CC_HOME); return true;
+            case "vol_up": bt.consumer(BtHid.CC_VOL_UP); return true;
+            case "vol_dn": bt.consumer(BtHid.CC_VOL_DN); return true;
+            case "mute": bt.consumer(BtHid.CC_MUTE); return true;
+            case "menu": bt.key(0x65, 0); return true;
+            default: return false; // encendido, entrada, canales y números: infrarrojo
+        }
+    }
+
+    // ================================================================== MOUSE
+
+    private void setupMousePage() {
+        pad = findViewById(R.id.touchpad);
         pad.setListener(new TouchpadView.Listener() {
             @Override
             public void onArrow(String key) {
@@ -111,66 +420,606 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
                 send("back");
             }
         });
+        pad.setPointerListener(new TouchpadView.PointerListener() {
+            @Override
+            public void onMove(float dx, float dy) {
+                bt.move(dx, dy);
+            }
 
-        buildNumbers();
-        setupTabs();
+            @Override
+            public void onWheel(int ticks) {
+                bt.wheel(ticks);
+            }
 
-        modeChip.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View v) {
-                showModeDialog();
+            public void onClick(int button) {
+                bt.click(button);
             }
-        });
-        bannerYes.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onBannerYes();
-            }
-        });
-        bannerNo.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                onBannerNo();
-            }
-        });
 
-        View cast = findViewById(R.id.btnCast);
-        cast.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onClick(View v) {
-                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                onCast();
-            }
-        });
-        cast.setOnLongClickListener(new View.OnLongClickListener() {
-            @Override
-            public boolean onLongClick(View v) {
-                v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-                showCastOptions();
-                return true;
+            public void onButton(int mask, boolean down) {
+                bt.button(mask, down);
             }
         });
 
-        refreshMode();
+        bindClickButton(findViewById(R.id.btnLeftClick), 1, "ok");
+        bindClickButton(findViewById(R.id.btnRightClick), 2, "back");
+        bindKey(R.id.mBack, "back");
+        bindKey(R.id.mHome, "home");
+        bindKey(R.id.mVolUp, "vol_up");
+        bindKey(R.id.mVolDn, "vol_dn");
+
+        SeekBar speed = findViewById(R.id.speed);
+        int saved = prefs.getInt("mouse_speed", 45);
+        speed.setProgress(saved);
+        applySpeed(saved);
+        speed.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar s, int p, boolean user) {
+                applySpeed(p);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar s) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar s) {
+                prefs.edit().putInt("mouse_speed", s.getProgress()).apply();
+            }
+        });
+
+        setupBtCard(findViewById(R.id.mouseBt));
+    }
+
+    private void applySpeed(int p) {
+        float s = 0.4f + p / 100f * 2.0f;
+        pad.setSensitivity(s);
+        ((TextView) findViewById(R.id.speedLabel)).setText(String.format(java.util.Locale.ROOT, "Velocidad %.1fx", s));
+    }
+
+    /** Botón de clic: mantenerlo presionado permite arrastrar con el otro dedo. */
+    private void bindClickButton(final View v, final int mask, final String irKey) {
+        v.setOnTouchListener((view, e) -> {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                    view.animate().scaleX(0.95f).scaleY(0.92f).setDuration(70).start();
+                    view.setPressed(true);
+                    if (bt.isConnected()) bt.button(mask, true);
+                    return true;
+                case MotionEvent.ACTION_UP:
+                    view.performClick();
+                    // fall through
+                case MotionEvent.ACTION_CANCEL:
+                    view.setPressed(false);
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(240).setInterpolator(new OvershootInterpolator(3f)).start();
+                    if (bt.isConnected()) bt.button(mask, false);
+                    else if (e.getActionMasked() == MotionEvent.ACTION_UP) send(irKey);
+                    return true;
+            }
+            return false;
+        });
+    }
+
+    // ================================================================== TECLADO
+
+    private void setupKeyboardPage() {
+        textInput = findViewById(R.id.textInput);
+        liveSwitch = findViewById(R.id.liveSwitch);
+        final View sendBtn = findViewById(R.id.btnSendText);
+        liveSwitch.setChecked(prefs.getBoolean("live_typing", true));
+        sendBtn.setVisibility(liveSwitch.isChecked() ? View.GONE : View.VISIBLE);
+        liveSwitch.setOnCheckedChangeListener((b, on) -> {
+            prefs.edit().putBoolean("live_typing", on).apply();
+            sendBtn.setVisibility(on ? View.GONE : View.VISIBLE);
+            if (on) setTextSilently("");
+        });
+        sendBtn.setOnClickListener(v -> {
+            if (!requireBt()) return;
+            bt.type(textInput.getText().toString());
+            setTextSilently("");
+        });
+        pressFx(sendBtn);
+
+        textInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int a, int b, int c) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                String now = s.toString();
+                if (suppressWatcher || !liveSwitch.isChecked()) {
+                    lastText = now;
+                    return;
+                }
+                if (!bt.isConnected()) {
+                    lastText = now;
+                    toastOnce("Conecta la TV por Bluetooth para escribir en ella");
+                    return;
+                }
+                // Envía solo la diferencia: lo borrado como Retroceso y lo nuevo como teclas.
+                int p = 0, max = Math.min(lastText.length(), now.length());
+                while (p < max && lastText.charAt(p) == now.charAt(p)) p++;
+                bt.backspace(lastText.length() - p);
+                bt.type(now.substring(p));
+                lastText = now;
+            }
+        });
+
+        bindTypingKey(R.id.kLeft, () -> bt.key(BtHid.K_LEFT, 0));
+        bindTypingKey(R.id.kRight, () -> bt.key(BtHid.K_RIGHT, 0));
+        bindTypingKey(R.id.kSpace, () -> {
+            if (liveSwitch.isChecked()) textInput.getText().append(" ");
+            else bt.key(BtHid.K_SPACE, 0);
+        });
+        bindTypingKey(R.id.kBackspace, () -> {
+            bt.key(BtHid.K_BACKSPACE, 0);
+            String t = textInput.getText().toString();
+            if (!t.isEmpty()) setTextSilently(t.substring(0, t.length() - 1));
+        });
+        bindTypingKey(R.id.kEnter, () -> {
+            if (!liveSwitch.isChecked() && textInput.length() > 0) bt.type(textInput.getText().toString());
+            bt.key(BtHid.K_ENTER, 0);
+            setTextSilently("");
+        });
+
+        setupBtCard(findViewById(R.id.keyboardBt));
+    }
+
+    private void bindTypingKey(int id, final Runnable action) {
+        View v = findViewById(id);
+        v.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            if (requireBt()) action.run();
+        });
+        pressFx(v);
+    }
+
+    private void setTextSilently(String t) {
+        suppressWatcher = true;
+        textInput.setText(t);
+        textInput.setSelection(t.length());
+        lastText = t;
+        suppressWatcher = false;
+    }
+
+    private boolean requireBt() {
+        if (bt.isConnected()) return true;
+        toast("Primero conecta la TV por Bluetooth");
+        onBtAction();
+        return false;
+    }
+
+    // ================================================================== BLUETOOTH
+
+    private void setupBtCard(View card) {
+        View action = card.findViewById(R.id.btCardAction);
+        action.setOnClickListener(v -> onBtAction());
+        pressFx(action);
+    }
+
+    @Override
+    public void onStateChanged(BtHid.State state, String name) {
+        boolean connected = state == BtHid.State.CONNECTED;
+        boolean busy = state == BtHid.State.CONNECTING || state == BtHid.State.REGISTERING;
+        int accent = getResources().getColor(R.color.accent), muted = getResources().getColor(R.color.muted);
+
+        btIcon.setImageTintList(ColorStateList.valueOf(connected ? accent : muted));
+        btText.setText(connected ? (name != null ? name : "Conectado") : busy ? "Conectando…" : "Bluetooth");
+
+        String title, sub, act;
+        switch (state) {
+            case UNSUPPORTED:
+                title = "Bluetooth no disponible";
+                sub = "Tu celular no permite funcionar como mouse (requiere Android 9+)";
+                act = "Info";
+                break;
+            case OFF:
+                title = "Bluetooth apagado";
+                sub = "Actívalo para usar el mouse y el teclado";
+                act = "Activar";
+                break;
+            case CONNECTED:
+                title = "Conectado a " + (name != null ? name : "la TV");
+                sub = page == 2 ? "Lo que escribas aparece en la TV" : "Mueve el dedo: el cursor se mueve en la TV";
+                act = "Cambiar";
+                break;
+            case CONNECTING:
+            case REGISTERING:
+                title = "Conectando" + (name != null ? " con " + name : "") + "…";
+                sub = "Acepta la conexión en la TV si lo pide";
+                act = "TVs";
+                break;
+            default:
+                title = "Sin conexión Bluetooth";
+                sub = page == 2 ? "Conéctate para escribir en la TV" : "Por ahora el panel envía flechas por infrarrojo";
+                act = "Conectar";
+        }
+        for (int id : new int[]{R.id.mouseBt, R.id.keyboardBt}) {
+            View card = findViewById(id);
+            ((TextView) card.findViewById(R.id.btCardTitle)).setText(title);
+            ((TextView) card.findViewById(R.id.btCardSub)).setText(sub);
+            ((TextView) card.findViewById(R.id.btCardAction)).setText(act);
+            ((ImageView) card.findViewById(R.id.btCardIcon)).setImageTintList(ColorStateList.valueOf(connected ? accent : muted));
+            View pulse = card.findViewById(R.id.btPulse);
+            pulse.animate().cancel();
+            if (busy) pulseLoop(pulse);
+            else pulse.animate().alpha(connected ? 0.6f : 0f).scaleX(1f).scaleY(1f).setDuration(250).start();
+        }
+
+        pad.setPointerMode(connected);
+        pad.setHint(connected
+                ? "Mueve el dedo para mover el cursor\nToca = clic · Dos dedos = clic derecho o desplazar\nMantén presionado y arrastra = arrastrar"
+                : "Sin Bluetooth: desliza = flechas · toca = OK\nmantén presionado = Atrás (infrarrojo)\n\nConecta el Bluetooth para tener cursor de mouse");
+    }
+
+    private void pulseLoop(final View v) {
+        v.setAlpha(0.7f);
+        v.setScaleX(0.6f);
+        v.setScaleY(0.6f);
+        v.animate().alpha(0f).scaleX(1.25f).scaleY(1.25f).setDuration(900).withEndAction(() -> {
+            BtHid.State s = bt.state();
+            if (s == BtHid.State.CONNECTING || s == BtHid.State.REGISTERING) pulseLoop(v);
+        }).start();
+    }
+
+    @android.annotation.SuppressLint("MissingPermission") // el permiso se verifica antes con BtHid.hasPermission
+    private void onBtAction() {
+        if (!bt.isSupported()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Mouse Bluetooth no disponible")
+                    .setMessage("Este celular no permite presentarse como mouse/teclado Bluetooth "
+                            + "(se necesita Android 9 o superior y que el fabricante lo tenga activado). "
+                            + "Puedes seguir usando el panel con flechas por infrarrojo.")
+                    .setPositiveButton("Entendido", null)
+                    .show();
+            return;
+        }
+        if (!BtHid.hasPermission(this)) {
+            if (Build.VERSION.SDK_INT >= 31) {
+                requestPermissions(new String[]{"android.permission.BLUETOOTH_CONNECT",
+                        "android.permission.BLUETOOTH_ADVERTISE"}, REQ_BT_PERMS);
+            }
+            return;
+        }
+        if (!bt.adapterEnabled()) {
+            try {
+                startActivityForResult(new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), REQ_BT_ENABLE);
+            } catch (Exception e) {
+                toast("Activa el Bluetooth en los ajustes");
+            }
+            return;
+        }
+        bt.start();
+        showDeviceDialog();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (code != REQ_BT_PERMS) return;
+        if (BtHid.hasPermission(this)) onBtAction();
+        else toast("Sin el permiso de «Dispositivos cercanos» no se puede usar el Bluetooth");
+    }
+
+    @Override
+    protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        if (code == REQ_BT_ENABLE && result == RESULT_OK) handler.postDelayed(this::onBtAction, 400);
+    }
+
+    private void showDeviceDialog() {
+        final List<BluetoothDevice> devices = bt.pairedDevices();
+        final List<String> labels = new ArrayList<>();
+        labels.add("＋  Emparejar una TV nueva");
+        for (BluetoothDevice d : devices) {
+            String n;
+            try {
+                n = d.getName();
+            } catch (SecurityException e) {
+                n = null;
+            }
+            labels.add((n != null ? n : d.getAddress()));
+        }
+        final boolean connected = bt.isConnected();
+        if (connected) labels.add("Desconectar");
+        new AlertDialog.Builder(this)
+                .setTitle("Conectar la TV por Bluetooth")
+                .setItems(labels.toArray(new String[0]), (dlg, which) -> {
+                    if (which == 0) {
+                        showPairDialog();
+                    } else if (connected && which == labels.size() - 1) {
+                        bt.disconnect();
+                    } else {
+                        BluetoothDevice d = devices.get(which - 1);
+                        bt.connect(d);
+                        toast("Conectando con " + labels.get(which) + "…");
+                    }
+                })
+                .show();
+    }
+
+    @android.annotation.SuppressLint("MissingPermission") // solo se llega aquí con el permiso concedido
+    private void showPairDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Emparejar una TV nueva")
+                .setMessage("1. Toca «Hacer visible» y acepta.\n"
+                        + "2. En la TV abre Ajustes › Control remoto y accesorios › Agregar accesorio "
+                        + "(o Ajustes › Bluetooth / Conexiones › Buscar dispositivos).\n"
+                        + "3. Elige «" + bt.localName() + "» y acepta el código en ambos.\n\n"
+                        + "Listo: la próxima vez se conecta solo al abrir la app.")
+                .setPositiveButton("Hacer visible", (d, w) -> {
+                    bt.start();
+                    Intent i = new Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE);
+                    i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300);
+                    try {
+                        startActivity(i);
+                    } catch (Exception e) {
+                        toast("No se pudo hacer visible el Bluetooth");
+                    }
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    // ================================================================== ENCENDIDO / DETECCIÓN (IR)
+
+    private void onPower(boolean forceSweep) {
         if (!ir.hasEmitter()) {
-            status.setText("Este celular no tiene emisor infrarrojo (IR). La app necesita un teléfono con infrarrojo.");
-            status.setTextColor(getResources().getColor(R.color.power));
+            toast("Este celular no tiene emisor infrarrojo");
+            return;
+        }
+        if (ir.isSweeping()) {
+            ir.stopSweep();
+            return;
+        }
+        if (forceSweep) {
+            ir.startSweep(this);
+            showSweepBanner(0, ir.sweepSize());
+        } else if (ir.powerNeedsSweep()) {
+            ir.power(this);
+            showSweepBanner(0, ir.sweepSize());
+        } else {
+            ir.power(this);
         }
     }
 
     @Override
-    protected void onResume() {
-        super.onResume();
-        refreshCast();
-        if (pendingCastAfterSetup && CastFlow.serviceEnabled(this)) {
-            pendingCastAfterSetup = false;
-            onCast();
+    public void onProgress(int sent, int total) {
+        if (bannerState == Banner.SWEEP) showSweepBanner(sent, total);
+    }
+
+    @Override
+    public void onFinished(boolean cancelled) {
+        stopPowerPulse();
+        if (bannerState != Banner.SWEEP) return;
+        if (cancelled) {
+            hideBanner();
+        } else {
+            bannerState = Banner.SWEEP_DONE;
+            bannerProgress.setVisibility(View.GONE);
+            bannerNo.setVisibility(View.VISIBLE);
+            bannerText.setText("Se enviaron todos los códigos. Si la TV prendió al final, toca «¡Ya prendió!». "
+                    + "Si no, acércate, apunta directo a la TV y vuelve a presionar Encender.");
+            bannerYes.setText("¡Ya prendió!");
+            bannerNo.setText("Cerrar");
         }
     }
 
-    // ------------------------------------------------------------------ proyectar
+    private void showSweepBanner(int sent, int total) {
+        if (bannerState != Banner.SWEEP) startPowerPulse();
+        bannerState = Banner.SWEEP;
+        revealBanner();
+        bannerNo.setVisibility(View.VISIBLE);
+        bannerProgress.setVisibility(View.VISIBLE);
+        bannerProgress.setMax(Math.max(1, total));
+        bannerProgress.setProgress(sent);
+        bannerText.setText("Apunta el celular hacia la TV. Probando todas las marcas… (" + sent + "/" + total + ")\n"
+                + "Cuando la TV prenda o se apague, toca «¡Ya prendió!».");
+        bannerYes.setText("¡Ya prendió!");
+        bannerNo.setText("Detener");
+    }
 
-    private boolean pendingCastAfterSetup;
+    private void startPowerPulse() {
+        stopPowerPulse();
+        powerPulse = ValueAnimator.ofFloat(1f, 1.1f);
+        powerPulse.setDuration(520);
+        powerPulse.setRepeatMode(ValueAnimator.REVERSE);
+        powerPulse.setRepeatCount(ValueAnimator.INFINITE);
+        powerPulse.addUpdateListener(a -> {
+            float s = (float) a.getAnimatedValue();
+            powerBtn.setScaleX(s);
+            powerBtn.setScaleY(s);
+        });
+        powerPulse.start();
+    }
+
+    private void stopPowerPulse() {
+        if (powerPulse != null) {
+            powerPulse.cancel();
+            powerPulse = null;
+            powerBtn.animate().scaleX(1f).scaleY(1f).setDuration(200).start();
+        }
+    }
+
+    private void onBannerYes() {
+        switch (bannerState) {
+            case SWEEP:
+            case SWEEP_DONE:
+                stopPowerPulse();
+                List<IrEngine.Family> c = ir.hitCandidates();
+                if (c.isEmpty()) {
+                    showInfo("¡Listo! Encender ya funciona directo con tu TV. Los demás botones se envían a todas las marcas.");
+                    refreshMode();
+                } else if (c.size() <= 2) {
+                    finishDetection(c);
+                } else {
+                    candidates = c;
+                    volumeUps = 0;
+                    showRefineReady();
+                }
+                break;
+            case REFINE_READY:
+                runRefineTest();
+                break;
+            case REFINE_ASK:
+                volumeUps++;
+                candidates = testGroup;
+                nextRefineStep();
+                break;
+            default:
+                hideBanner();
+        }
+    }
+
+    private void onBannerNo() {
+        switch (bannerState) {
+            case SWEEP:
+                ir.stopSweep();
+                hideBanner();
+                break;
+            case REFINE_READY:
+                finishDetection(candidates);
+                break;
+            case REFINE_ASK:
+                List<IrEngine.Family> rest = new ArrayList<>(candidates);
+                rest.removeAll(testGroup);
+                candidates = rest;
+                nextRefineStep();
+                break;
+            default:
+                hideBanner();
+        }
+    }
+
+    private void showRefineReady() {
+        bannerState = Banner.REFINE_READY;
+        revealBanner();
+        bannerProgress.setVisibility(View.GONE);
+        bannerNo.setVisibility(View.VISIBLE);
+        bannerText.setText("¡Bien! Ahora identifiquemos tu TV para que responda al instante.\n"
+                + "Espera a que la TV muestre imagen y toca «Probar»: subiremos el volumen un poquito.");
+        bannerYes.setText("Probar");
+        bannerNo.setText("Omitir");
+    }
+
+    private void runRefineTest() {
+        testGroup = new ArrayList<>();
+        List<IrEngine.Family> withVol = new ArrayList<>();
+        for (IrEngine.Family f : candidates) if (f.has("vol_up")) withVol.add(f);
+        int half = (withVol.size() + 1) / 2;
+        for (int i = 0; i < half; i++) testGroup.add(withVol.get(i));
+        if (testGroup.isEmpty()) {
+            finishDetection(candidates);
+            return;
+        }
+        ir.sendKeyTo(testGroup, "vol_up");
+        bannerState = Banner.REFINE_ASK;
+        bannerText.setText("¿Subió el volumen en la TV?");
+        bannerYes.setText("Sí");
+        bannerNo.setText("No");
+    }
+
+    private void nextRefineStep() {
+        if (candidates.size() <= 1) {
+            finishDetection(candidates);
+            return;
+        }
+        bannerText.setText("Probando de nuevo…");
+        handler.postDelayed(() -> {
+            if (bannerState == Banner.REFINE_ASK) runRefineTest();
+        }, 700);
+    }
+
+    private void finishDetection(List<IrEngine.Family> fams) {
+        List<String> ids = new ArrayList<>();
+        for (IrEngine.Family f : fams) ids.add(f.id);
+        ir.setActive(ids);
+        for (int i = 0; i < volumeUps; i++) ir.sendKey("vol_dn");
+        volumeUps = 0;
+        refreshMode();
+        showInfo("¡Listo! Control configurado para: " + ir.modeLabel()
+                + ".\nAhora todos los botones responden al instante.");
+    }
+
+    private void showInfo(String text) {
+        bannerState = Banner.INFO;
+        revealBanner();
+        bannerProgress.setVisibility(View.GONE);
+        bannerText.setText(text);
+        bannerYes.setText("Entendido");
+        bannerNo.setVisibility(View.GONE);
+        handler.postDelayed(() -> {
+            if (bannerState == Banner.INFO) hideBanner();
+        }, 7000);
+    }
+
+    private void revealBanner() {
+        if (banner.getVisibility() == View.VISIBLE) return;
+        banner.setVisibility(View.VISIBLE);
+        banner.setAlpha(0f);
+        banner.setTranslationY(-dp(40));
+        banner.animate().alpha(1f).translationY(0).setDuration(260).setInterpolator(new DecelerateInterpolator(2f)).start();
+    }
+
+    private void hideBanner() {
+        bannerState = Banner.NONE;
+        stopPowerPulse();
+        banner.animate().alpha(0f).translationY(-dp(30)).setDuration(180).withEndAction(() -> {
+            if (bannerState == Banner.NONE) banner.setVisibility(View.GONE);
+            bannerNo.setVisibility(View.VISIBLE);
+        }).start();
+    }
+
+    private void refreshMode() {
+        modeChip.setText(ir.hasEmitter() ? "Infrarrojo: " + ir.modeLabel() : "Sin infrarrojo");
+    }
+
+    private void showModeDialog() {
+        String[] items = {
+                "Universal (todas las marcas)",
+                "Detectar mi TV (barrido de encendido)",
+                "Elegir marca manualmente…"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Infrarrojo: " + ir.modeLabel())
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        ir.resetToUniversal();
+                        refreshMode();
+                        toast("Modo universal: cada botón se envía a las marcas más comunes");
+                    } else if (which == 1) {
+                        onPower(true);
+                    } else {
+                        showBrandDialog();
+                    }
+                })
+                .show();
+    }
+
+    private void showBrandDialog() {
+        final List<IrEngine.Family> fams = ir.families;
+        String[] names = new String[fams.size()];
+        for (int i = 0; i < names.length; i++) names[i] = fams.get(i).name;
+        new AlertDialog.Builder(this)
+                .setTitle("Elige la marca")
+                .setItems(names, (d, which) -> {
+                    List<String> ids = new ArrayList<>();
+                    ids.add(fams.get(which).id);
+                    ir.setActive(ids);
+                    refreshMode();
+                    toast("Control configurado: " + fams.get(which).name);
+                })
+                .show();
+    }
+
+    // ================================================================== PROYECTAR
 
     private void refreshCast() {
         TextView sub = findViewById(R.id.castSub);
@@ -207,31 +1056,22 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
                         + "2. Busca «Control Universal» (en Xiaomi está en «Apps descargadas») y actívalo.\n\n"
                         + "Si Android dice «Configuración restringida»: toca «Info de la app», luego ⋮ (arriba a la "
                         + "derecha) › «Permitir configuración restringida», y vuelve a intentarlo.")
-                .setPositiveButton("Activar", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int w) {
-                        pendingCastAfterSetup = true;
-                        try {
-                            startActivity(new android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
-                        } catch (Exception e) {
-                            toast("Abre Ajustes › Accesibilidad");
-                        }
+                .setPositiveButton("Activar", (d, w) -> {
+                    pendingCastAfterSetup = true;
+                    try {
+                        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    } catch (Exception e) {
+                        toast("Abre Ajustes › Accesibilidad");
                     }
                 })
-                .setNeutralButton("Info de la app", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int w) {
-                        pendingCastAfterSetup = true;
-                        startActivity(new android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                android.net.Uri.parse("package:" + getPackageName())));
-                    }
+                .setNeutralButton("Info de la app", (d, w) -> {
+                    pendingCastAfterSetup = true;
+                    startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:" + getPackageName())));
                 })
-                .setNegativeButton("Proyectar a mano", new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int w) {
-                        if (!CastFlow.start(MainActivity.this, false)) {
-                            toast("Abre «Transmitir» en el panel rápido del celular y toca tu TV.");
-                        }
+                .setNegativeButton("Proyectar a mano", (d, w) -> {
+                    if (!CastFlow.start(MainActivity.this, false)) {
+                        toast("Abre «Transmitir» en el panel rápido del celular y toca tu TV.");
                     }
                 })
                 .show();
@@ -248,21 +1088,18 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
         };
         new AlertDialog.Builder(this)
                 .setTitle("Proyectar")
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int which) {
-                        if (which == 0) {
-                            showMethodDialog();
-                        } else if (which == 1) {
-                            CastFlow.setPowerIfMissing(MainActivity.this, !power);
-                            toast(!power ? "Se encenderá la TV si no aparece" : "No se encenderá la TV");
-                        } else if (which == 2 && name != null) {
-                            CastFlow.setTvName(MainActivity.this, null);
-                            refreshCast();
-                            toast("La próxima vez elige tu TV en la lista");
-                        } else if (which == 3) {
-                            startActivity(new android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS));
-                        }
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        showMethodDialog();
+                    } else if (which == 1) {
+                        CastFlow.setPowerIfMissing(MainActivity.this, !power);
+                        toast(!power ? "Se encenderá la TV si no aparece" : "No se encenderá la TV");
+                    } else if (which == 2 && name != null) {
+                        CastFlow.setTvName(MainActivity.this, null);
+                        refreshCast();
+                        toast("La próxima vez elige tu TV en la lista");
+                    } else if (which == 3) {
+                        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
                     }
                 })
                 .show();
@@ -279,357 +1116,17 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
         }
         new AlertDialog.Builder(this)
                 .setTitle("Forma de proyectar")
-                .setSingleChoiceItems(labels, checked, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int which) {
-                        CastFlow.setMethod(MainActivity.this, methods[which]);
-                        CastFlow.setTvName(MainActivity.this, null);
-                        refreshCast();
-                        d.dismiss();
-                        toast("Listo. La próxima vez elige tu TV en la lista.");
-                    }
+                .setSingleChoiceItems(labels, checked, (d, which) -> {
+                    CastFlow.setMethod(MainActivity.this, methods[which]);
+                    CastFlow.setTvName(MainActivity.this, null);
+                    refreshCast();
+                    d.dismiss();
+                    toast("Listo. La próxima vez elige tu TV en la lista.");
                 })
                 .show();
     }
 
-    // ------------------------------------------------------------------ teclas
-
-    private void bindKey(int id, final String key) {
-        View v = findViewById(id);
-        v.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                send(key);
-            }
-        });
-    }
-
-    private void send(String key) {
-        if (ir.isSweeping()) {
-            toast("Buscando tu TV… toca «¡Ya prendió!» o «Detener» primero");
-            return;
-        }
-        ir.sendKey(key);
-    }
-
-    private void onPower(boolean forceSweep) {
-        if (!ir.hasEmitter()) {
-            toast("Este celular no tiene emisor infrarrojo");
-            return;
-        }
-        if (ir.isSweeping()) {
-            ir.stopSweep();
-            return;
-        }
-        if (forceSweep) {
-            ir.startSweep(this);
-            showSweepBanner(0, ir.sweepSize());
-        } else if (ir.powerNeedsSweep()) {
-            ir.power(this);
-            showSweepBanner(0, ir.sweepSize());
-        } else {
-            ir.power(this);
-        }
-    }
-
-    // ------------------------------------------------------------------ barrido
-
-    @Override
-    public void onProgress(int sent, int total) {
-        if (bannerState == Banner.SWEEP) showSweepBanner(sent, total);
-    }
-
-    @Override
-    public void onFinished(boolean cancelled) {
-        if (bannerState != Banner.SWEEP) return;
-        if (cancelled) {
-            hideBanner();
-        } else {
-            bannerState = Banner.SWEEP_DONE;
-            banner.setVisibility(View.VISIBLE);
-            bannerNo.setVisibility(View.VISIBLE);
-            bannerProgress.setVisibility(View.GONE);
-            bannerText.setText("Se enviaron todos los códigos. Si la TV prendió al final, toca «¡Ya prendió!». "
-                    + "Si no, acércate, apunta directo a la TV y vuelve a presionar Encender.");
-            bannerYes.setText("¡Ya prendió!");
-            bannerNo.setText("Cerrar");
-        }
-    }
-
-    private void showSweepBanner(int sent, int total) {
-        bannerState = Banner.SWEEP;
-        banner.setVisibility(View.VISIBLE);
-        bannerNo.setVisibility(View.VISIBLE);
-        bannerProgress.setVisibility(View.VISIBLE);
-        bannerProgress.setMax(Math.max(1, total));
-        bannerProgress.setProgress(sent);
-        bannerText.setText("Apunta el celular hacia la TV. Probando todas las marcas… (" + sent + "/" + total + ")\n"
-                + "Cuando la TV prenda o se apague, toca «¡Ya prendió!».");
-        bannerYes.setText("¡Ya prendió!");
-        bannerNo.setText("Detener");
-    }
-
-    private void onBannerYes() {
-        switch (bannerState) {
-            case SWEEP:
-            case SWEEP_DONE:
-                List<IrEngine.Family> c = ir.hitCandidates();
-                if (c.isEmpty()) {
-                    showInfo("¡Listo! Encender ya funciona directo con tu TV. Los demás botones se envían a todas las marcas.");
-                    refreshMode();
-                } else if (c.size() <= 2) {
-                    finishDetection(c);
-                } else {
-                    candidates = c;
-                    volumeUps = 0;
-                    showRefineReady();
-                }
-                break;
-            case REFINE_READY:
-                runRefineTest();
-                break;
-            case REFINE_ASK:
-                // Sí, subió el volumen: la TV está en el grupo probado.
-                volumeUps++;
-                candidates = testGroup;
-                nextRefineStep();
-                break;
-            default:
-                hideBanner();
-        }
-    }
-
-    private void onBannerNo() {
-        switch (bannerState) {
-            case SWEEP:
-                ir.stopSweep();
-                hideBanner();
-                break;
-            case REFINE_READY:
-                finishDetection(candidates); // omitir el afinado: deja todas las candidatas
-                break;
-            case REFINE_ASK:
-                List<IrEngine.Family> rest = new ArrayList<>(candidates);
-                rest.removeAll(testGroup);
-                candidates = rest;
-                nextRefineStep();
-                break;
-            default:
-                hideBanner();
-        }
-    }
-
-    // ------------------------------------------------------------------ afinado
-
-    private void showRefineReady() {
-        bannerState = Banner.REFINE_READY;
-        banner.setVisibility(View.VISIBLE);
-        bannerNo.setVisibility(View.VISIBLE);
-        bannerProgress.setVisibility(View.GONE);
-        bannerText.setText("¡Bien! Ahora identifiquemos tu TV para que responda al instante.\n"
-                + "Espera a que la TV muestre imagen y toca «Probar»: subiremos el volumen un poquito.");
-        bannerYes.setText("Probar");
-        bannerNo.setText("Omitir");
-    }
-
-    private void runRefineTest() {
-        testGroup = new ArrayList<>();
-        List<IrEngine.Family> withVol = new ArrayList<>();
-        for (IrEngine.Family f : candidates) if (f.has("vol_up")) withVol.add(f);
-        int half = (withVol.size() + 1) / 2;
-        for (int i = 0; i < half; i++) testGroup.add(withVol.get(i));
-        if (testGroup.isEmpty()) {
-            finishDetection(candidates);
-            return;
-        }
-        ir.sendKeyTo(testGroup, "vol_up");
-        bannerState = Banner.REFINE_ASK;
-        bannerText.setText("¿Subió el volumen en la TV?");
-        bannerYes.setText("Sí");
-        bannerNo.setText("No");
-    }
-
-    private void nextRefineStep() {
-        if (candidates.size() <= 1) {
-            finishDetection(candidates);
-            return;
-        }
-        bannerText.setText("Probando de nuevo…");
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (bannerState == Banner.REFINE_ASK) runRefineTest();
-            }
-        }, 700);
-    }
-
-    private void finishDetection(List<IrEngine.Family> fams) {
-        List<String> ids = new ArrayList<>();
-        for (IrEngine.Family f : fams) ids.add(f.id);
-        ir.setActive(ids);
-        // Deshace las subidas de volumen de las pruebas.
-        for (int i = 0; i < volumeUps; i++) ir.sendKey("vol_dn");
-        volumeUps = 0;
-        refreshMode();
-        showInfo("¡Listo! Control configurado para: " + ir.modeLabel()
-                + ".\nAhora todos los botones responden al instante.");
-    }
-
-    private void showInfo(String text) {
-        bannerState = Banner.INFO;
-        banner.setVisibility(View.VISIBLE);
-        bannerProgress.setVisibility(View.GONE);
-        bannerText.setText(text);
-        bannerYes.setText("Entendido");
-        bannerNo.setVisibility(View.GONE);
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (bannerState == Banner.INFO) hideBanner();
-            }
-        }, 6000);
-    }
-
-    private void hideBanner() {
-        bannerState = Banner.NONE;
-        banner.setVisibility(View.GONE);
-        bannerNo.setVisibility(View.VISIBLE);
-    }
-
-    // ------------------------------------------------------------------ modo
-
-    private void refreshMode() {
-        modeChip.setText(ir.modeLabel());
-        if (!ir.hasEmitter()) return;
-        if (ir.isUniversal()) {
-            status.setText("Modo universal: cada botón se envía a las marcas más comunes. "
-                    + "Presiona Encender y toca «¡Ya prendió!» para que responda al instante. "
-                    + "Mantén presionado Encender para volver a buscar.");
-        } else {
-            status.setText("Mantén presionado Encender para buscar otra TV.");
-        }
-    }
-
-    private void showModeDialog() {
-        String[] items = {
-                "Universal (todas las marcas)",
-                "Detectar mi TV (barrido de encendido)",
-                "Elegir marca manualmente…"
-        };
-        new AlertDialog.Builder(this)
-                .setTitle("Modo: " + ir.modeLabel())
-                .setItems(items, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int which) {
-                        if (which == 0) {
-                            ir.resetToUniversal();
-                            refreshMode();
-                            toast("Modo universal");
-                        } else if (which == 1) {
-                            onPower(true);
-                        } else {
-                            showBrandDialog();
-                        }
-                    }
-                })
-                .show();
-    }
-
-    private void showBrandDialog() {
-        final List<IrEngine.Family> fams = ir.families;
-        String[] names = new String[fams.size()];
-        for (int i = 0; i < names.length; i++) names[i] = fams.get(i).name;
-        new AlertDialog.Builder(this)
-                .setTitle("Elige la marca")
-                .setItems(names, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface d, int which) {
-                        List<String> ids = new ArrayList<>();
-                        ids.add(fams.get(which).id);
-                        ir.setActive(ids);
-                        refreshMode();
-                        toast("Control configurado: " + fams.get(which).name);
-                    }
-                })
-                .show();
-    }
-
-    // ------------------------------------------------------------------ pestañas y números
-
-    private void setupTabs() {
-        tabs = new TextView[]{findViewById(R.id.tabPad), findViewById(R.id.tabArrows), findViewById(R.id.tabNumbers)};
-        tabLines = new View[]{findViewById(R.id.tabLine0), findViewById(R.id.tabLine1), findViewById(R.id.tabLine2)};
-        tabPages = new View[]{findViewById(R.id.touchpad), findViewById(R.id.dpad), findViewById(R.id.numbers)};
-        for (int i = 0; i < tabs.length; i++) {
-            final int idx = i;
-            tabs[i].setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    selectTab(idx);
-                }
-            });
-        }
-        int saved = getSharedPreferences("control", MODE_PRIVATE).getInt("tab", 0);
-        selectTab(saved);
-    }
-
-    private void selectTab(int idx) {
-        for (int i = 0; i < tabs.length; i++) {
-            boolean on = i == idx;
-            tabs[i].setTextColor(getResources().getColor(on ? R.color.accent : R.color.muted));
-            tabLines[i].setVisibility(on ? View.VISIBLE : View.INVISIBLE);
-            tabPages[i].setVisibility(on ? View.VISIBLE : View.GONE);
-        }
-        getSharedPreferences("control", MODE_PRIVATE).edit().putInt("tab", idx).apply();
-    }
-
-    private void buildNumbers() {
-        LinearLayout grid = findViewById(R.id.numbers);
-        String[][] rows = {{"1", "2", "3"}, {"4", "5", "6"}, {"7", "8", "9"}, {"ok", "0", "back"}};
-        int size = dp(64);
-        int gap = dp(10);
-        for (String[] row : rows) {
-            LinearLayout line = new LinearLayout(this);
-            line.setOrientation(LinearLayout.HORIZONTAL);
-            line.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-            lp.topMargin = gap / 2;
-            lp.bottomMargin = gap / 2;
-            grid.addView(line, lp);
-            for (final String k : row) {
-                View b;
-                if (k.equals("back")) {
-                    ImageButton ib = new ImageButton(this);
-                    ib.setImageResource(R.drawable.ic_back);
-                    ib.setColorFilter(getResources().getColor(R.color.ink));
-                    ib.setContentDescription(getString(R.string.d_back));
-                    b = ib;
-                } else {
-                    TextView tv = new TextView(this);
-                    tv.setText(k.equals("ok") ? "OK" : k);
-                    tv.setTextColor(getResources().getColor(R.color.ink));
-                    tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, k.equals("ok") ? 18 : 24);
-                    tv.setGravity(Gravity.CENTER);
-                    b = tv;
-                }
-                b.setBackgroundResource(R.drawable.bg_round);
-                b.setClickable(true);
-                b.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-                        send(k);
-                    }
-                });
-                LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(size, size);
-                bp.leftMargin = dp(14);
-                bp.rightMargin = dp(14);
-                line.addView(b, bp);
-            }
-        }
-    }
+    // ================================================================== utilidades
 
     private int dp(int v) {
         return Math.round(v * getResources().getDisplayMetrics().density);
@@ -637,5 +1134,15 @@ public class MainActivity extends Activity implements IrEngine.SweepListener {
 
     private void toast(String s) {
         Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+    }
+
+    private long lastToastOnce;
+
+    private void toastOnce(String s) {
+        long now = System.currentTimeMillis();
+        if (now - lastToastOnce > 4000) {
+            lastToastOnce = now;
+            toast(s);
+        }
     }
 }

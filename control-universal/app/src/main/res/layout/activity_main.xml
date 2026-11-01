@@ -1,169 +1,611 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/scroll"
+<!-- Pantalla sin scroll: encabezado · sección (Control / Mouse / Teclado) · barra inferior -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
+    <!-- Encabezado -->
     <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:layout_height="56dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
         android:paddingLeft="20dp"
-        android:paddingTop="16dp"
-        android:paddingRight="20dp"
-        android:paddingBottom="24dp">
-
-        <!-- Encabezado -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <TextView
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/title"
-                android:textColor="@color/ink"
-                android:textSize="26sp" />
-
-            <View
-                android:id="@+id/irDot"
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:layout_marginRight="12dp"
-                android:alpha="0.15"
-                android:background="@drawable/bg_dot" />
-
-            <TextView
-                android:id="@+id/modeChip"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:background="@drawable/bg_chip"
-                android:drawableLeft="@drawable/ic_tune"
-                android:drawablePadding="6dp"
-                android:drawableTint="@color/muted"
-                android:ellipsize="end"
-                android:gravity="center_vertical"
-                android:maxWidth="190dp"
-                android:maxLines="1"
-                android:paddingLeft="12dp"
-                android:paddingRight="14dp"
-                android:text="Universal"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-        </LinearLayout>
+        android:paddingRight="16dp">
 
         <TextView
-            android:id="@+id/status"
-            android:layout_width="match_parent"
+            android:id="@+id/title"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textColor="@color/muted"
-            android:textSize="13sp" />
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/title"
+            android:textColor="@color/ink"
+            android:textSize="22sp" />
 
-        <!-- Proyectar con un toque -->
+        <View
+            android:id="@+id/irDot"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:layout_marginRight="10dp"
+            android:alpha="0.15"
+            android:background="@drawable/bg_dot" />
+
         <LinearLayout
-            android:id="@+id/btnCast"
-            android:layout_width="match_parent"
-            android:layout_height="60dp"
-            android:layout_marginTop="16dp"
-            android:background="@drawable/bg_cast"
+            android:id="@+id/btChip"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_chip_bt"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingLeft="22dp"
-            android:paddingRight="22dp">
+            android:paddingLeft="10dp"
+            android:paddingRight="12dp">
 
             <ImageView
-                android:layout_width="26dp"
-                android:layout_height="26dp"
+                android:id="@+id/btIcon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_cast" />
+                android:src="@drawable/ic_bluetooth"
+                android:tint="@color/muted" />
+
+            <TextView
+                android:id="@+id/btText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginLeft="6dp"
+                android:ellipsize="end"
+                android:maxWidth="150dp"
+                android:maxLines="1"
+                android:text="Bluetooth"
+                android:textColor="@color/ink"
+                android:textSize="13sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Secciones -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- ============ CONTROL ============ -->
+        <LinearLayout
+            android:id="@+id/pageControl"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingLeft="18dp"
+            android:paddingTop="4dp"
+            android:paddingRight="18dp"
+            android:paddingBottom="8dp">
 
             <LinearLayout
-                android:layout_width="0dp"
+                android:id="@+id/btnCast"
+                android:layout_width="match_parent"
+                android:layout_height="54dp"
+                android:background="@drawable/bg_cast"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingLeft="20dp"
+                android:paddingRight="20dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_cast" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="14dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/cast"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/castSub"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:ellipsize="end"
+                        android:maxLines="1"
+                        android:textColor="#D9FFFFFF"
+                        android:textSize="12sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- Entrada · Encender · Silencio -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="16dp"
+                android:layout_marginTop="14dp"
+                android:gravity="center"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <ImageButton
+                        android:id="@+id/btnInput"
+                        style="@style/RoundBtn"
+                        android:layout_width="58dp"
+                        android:layout_height="58dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/d_input"
+                        android:src="@drawable/ic_input" />
+                </FrameLayout>
+
+                <ImageButton
+                    android:id="@+id/btnPower"
+                    android:layout_width="76dp"
+                    android:layout_height="76dp"
+                    android:background="@drawable/bg_power"
+                    android:contentDescription="@string/d_power"
+                    android:elevation="6dp"
+                    android:scaleType="center"
+                    android:src="@drawable/ic_power"
+                    android:tint="#FFFFFFFF" />
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1">
+
+                    <ImageButton
+                        android:id="@+id/btnMute"
+                        style="@style/RoundBtn"
+                        android:layout_width="58dp"
+                        android:layout_height="58dp"
+                        android:layout_gravity="center"
+                        android:contentDescription="@string/d_mute"
+                        android:src="@drawable/ic_mute" />
+                </FrameLayout>
+            </LinearLayout>
+
+            <!-- Volumen · Inicio/Menú/Atrás · Canal (se estira con la pantalla) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="14dp"
                 android:layout_weight="1"
-                android:orientation="vertical">
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:layout_width="68dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_pill"
+                        android:orientation="vertical">
+
+                        <ImageButton
+                            android:id="@+id/btnVolUp"
+                            style="@style/PillBtn"
+                            android:contentDescription="@string/d_vol_up"
+                            android:src="@drawable/ic_plus" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:text="@string/volume"
+                            android:textColor="@color/muted"
+                            android:textSize="12sp" />
+
+                        <ImageButton
+                            android:id="@+id/btnVolDn"
+                            style="@style/PillBtn"
+                            android:contentDescription="@string/d_vol_dn"
+                            android:src="@drawable/ic_minus" />
+                    </LinearLayout>
+                </FrameLayout>
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:id="@+id/centerCol"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <ImageButton
+                        android:id="@+id/btnHome"
+                        style="@style/RoundBtn"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:contentDescription="@string/d_home"
+                        android:src="@drawable/ic_home" />
+
+                    <ImageButton
+                        android:id="@+id/btnMenu"
+                        style="@style/RoundBtn"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="8dp"
+                        android:contentDescription="@string/d_menu"
+                        android:src="@drawable/ic_menu" />
+
+                    <ImageButton
+                        android:id="@+id/btnBack"
+                        style="@style/RoundBtn"
+                        android:layout_width="52dp"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="8dp"
+                        android:contentDescription="@string/d_back"
+                        android:src="@drawable/ic_back" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:layout_width="68dp"
+                        android:layout_height="match_parent"
+                        android:layout_gravity="center"
+                        android:background="@drawable/bg_pill"
+                        android:orientation="vertical">
+
+                        <ImageButton
+                            android:id="@+id/btnChUp"
+                            style="@style/PillBtn"
+                            android:contentDescription="@string/d_ch_up"
+                            android:src="@drawable/ic_up" />
+
+                        <TextView
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:gravity="center"
+                            android:text="@string/channel"
+                            android:textColor="@color/muted"
+                            android:textSize="12sp" />
+
+                        <ImageButton
+                            android:id="@+id/btnChDn"
+                            style="@style/PillBtn"
+                            android:contentDescription="@string/d_ch_dn"
+                            android:src="@drawable/ic_down" />
+                    </LinearLayout>
+                </FrameLayout>
+            </LinearLayout>
+
+            <!-- Modo IR · selector Flechas / 123 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/cast"
-                    android:textColor="#FFFFFFFF"
-                    android:textSize="17sp"
-                    android:textStyle="bold" />
-
-                <TextView
-                    android:id="@+id/castSub"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:id="@+id/modeChip"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_chip"
+                    android:drawableLeft="@drawable/ic_tune"
+                    android:drawablePadding="6dp"
                     android:ellipsize="end"
+                    android:gravity="center_vertical"
                     android:maxLines="1"
-                    android:textColor="#D9FFFFFF"
+                    android:paddingLeft="12dp"
+                    android:paddingRight="12dp"
+                    android:text="Universal"
+                    android:textColor="@color/ink"
                     android:textSize="13sp" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginLeft="10dp"
+                    android:background="@drawable/bg_seg"
+                    android:orientation="horizontal"
+                    android:padding="2dp">
+
+                    <TextView
+                        android:id="@+id/segArrows"
+                        android:layout_width="78dp"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:text="@string/tab_arrows"
+                        android:textColor="@color/ink"
+                        android:textSize="13sp" />
+
+                    <TextView
+                        android:id="@+id/segNumbers"
+                        android:layout_width="58dp"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:text="@string/tab_numbers"
+                        android:textColor="@color/muted"
+                        android:textSize="13sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="10dp"
+                android:layout_weight="1.35">
+
+                <com.jonaalex.controluniversal.DpadView
+                    android:id="@+id/dpad"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent" />
+
+                <LinearLayout
+                    android:id="@+id/numbers"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:visibility="gone" />
+            </FrameLayout>
+        </LinearLayout>
+
+        <!-- ============ MOUSE ============ -->
+        <LinearLayout
+            android:id="@+id/pageMouse"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingTop="4dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone">
+
+            <include
+                android:id="@+id/mouseBt"
+                layout="@layout/bt_card" />
+
+            <com.jonaalex.controluniversal.TouchpadView
+                android:id="@+id/touchpad"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="12dp"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layout_marginTop="10dp"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/btnLeftClick"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1.4"
+                    android:background="@drawable/bg_click"
+                    android:clickable="true"
+                    android:gravity="center"
+                    android:text="Clic"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/btnRightClick"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_marginLeft="10dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/bg_click"
+                    android:clickable="true"
+                    android:gravity="center"
+                    android:text="Clic derecho"
+                    android:textColor="@color/ink"
+                    android:textSize="16sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/mBack"
+                    style="@style/RoundBtn"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="@string/d_back"
+                    android:src="@drawable/ic_back" />
+
+                <ImageButton
+                    android:id="@+id/mHome"
+                    style="@style/RoundBtn"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginLeft="8dp"
+                    android:contentDescription="@string/d_home"
+                    android:src="@drawable/ic_home" />
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginLeft="12dp"
+                    android:layout_weight="1"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/speedLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginLeft="14dp"
+                        android:text="Velocidad"
+                        android:textColor="@color/muted"
+                        android:textSize="12sp" />
+
+                    <SeekBar
+                        android:id="@+id/speed"
+                        android:layout_width="match_parent"
+                        android:layout_height="28dp"
+                        android:max="100"
+                        android:progressTint="@color/accent"
+                        android:thumbTint="@color/accent" />
+                </LinearLayout>
+
+                <ImageButton
+                    android:id="@+id/mVolDn"
+                    style="@style/RoundBtn"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:contentDescription="@string/d_vol_dn"
+                    android:src="@drawable/ic_minus" />
+
+                <ImageButton
+                    android:id="@+id/mVolUp"
+                    style="@style/RoundBtn"
+                    android:layout_width="48dp"
+                    android:layout_height="48dp"
+                    android:layout_marginLeft="8dp"
+                    android:contentDescription="@string/d_vol_up"
+                    android:src="@drawable/ic_plus" />
             </LinearLayout>
         </LinearLayout>
 
-        <!-- Fila superior: entrada · encender · silencio -->
+        <!-- ============ TECLADO ============ -->
         <LinearLayout
+            android:id="@+id/pageKeyboard"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:gravity="center"
-            android:orientation="horizontal">
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:paddingLeft="16dp"
+            android:paddingTop="4dp"
+            android:paddingRight="16dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone">
 
-            <FrameLayout
-                android:layout_width="0dp"
+            <include
+                android:id="@+id/keyboardBt"
+                layout="@layout/bt_card" />
+
+            <EditText
+                android:id="@+id/textInput"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_marginTop="12dp"
+                android:layout_weight="1"
+                android:background="@drawable/bg_input"
+                android:gravity="top|start"
+                android:hint="Escribe aquí: cada letra aparece en la TV al instante"
+                android:importantForAutofill="no"
+                android:inputType="textMultiLine|textNoSuggestions"
+                android:padding="18dp"
+                android:textColor="@color/ink"
+                android:textColorHint="@color/muted"
+                android:textSize="18sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1">
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <Switch
+                    android:id="@+id/liveSwitch"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:checked="true"
+                    android:text="Enviar al instante"
+                    android:textColor="@color/ink"
+                    android:textSize="14sp"
+                    android:thumbTint="@color/accent" />
+
+                <TextView
+                    android:id="@+id/btnSendText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:layout_marginLeft="12dp"
+                    android:background="@drawable/bg_btn_accent"
+                    android:clickable="true"
+                    android:drawableLeft="@drawable/ic_send"
+                    android:drawablePadding="8dp"
+                    android:gravity="center"
+                    android:paddingLeft="16dp"
+                    android:paddingRight="18dp"
+                    android:text="Enviar"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="15sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:gravity="center"
+                android:orientation="horizontal">
 
                 <ImageButton
-                    android:id="@+id/btnInput"
-                    style="@style/RoundBtn"
-                    android:layout_gravity="center"
-                    android:contentDescription="@string/d_input"
-                    android:src="@drawable/ic_input" />
-            </FrameLayout>
-
-            <ImageButton
-                android:id="@+id/btnPower"
-                android:layout_width="84dp"
-                android:layout_height="84dp"
-                android:background="@drawable/bg_power"
-                android:contentDescription="@string/d_power"
-                android:elevation="6dp"
-                android:scaleType="center"
-                android:src="@drawable/ic_power"
-                android:tint="#FFFFFFFF" />
-
-            <FrameLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1">
+                    android:id="@+id/kLeft"
+                    style="@style/KeyBtn"
+                    android:contentDescription="@string/d_left"
+                    android:src="@drawable/ic_left" />
 
                 <ImageButton
-                    android:id="@+id/btnMute"
-                    style="@style/RoundBtn"
-                    android:layout_gravity="center"
-                    android:contentDescription="@string/d_mute"
-                    android:src="@drawable/ic_mute" />
-            </FrameLayout>
+                    android:id="@+id/kRight"
+                    style="@style/KeyBtn"
+                    android:contentDescription="@string/d_right"
+                    android:src="@drawable/ic_right" />
+
+                <ImageButton
+                    android:id="@+id/kSpace"
+                    style="@style/KeyBtn"
+                    android:layout_weight="1.6"
+                    android:contentDescription="Espacio"
+                    android:src="@drawable/ic_space" />
+
+                <ImageButton
+                    android:id="@+id/kBackspace"
+                    style="@style/KeyBtn"
+                    android:contentDescription="Borrar"
+                    android:src="@drawable/ic_backspace" />
+
+                <ImageButton
+                    android:id="@+id/kEnter"
+                    style="@style/KeyBtn"
+                    android:background="@drawable/bg_btn_accent"
+                    android:contentDescription="Enter"
+                    android:src="@drawable/ic_enter" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- Aviso del barrido de encendido / ayuda -->
+        <!-- Aviso flotante (búsqueda de la TV, detección) -->
         <LinearLayout
             android:id="@+id/banner"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
+            android:layout_gravity="top"
+            android:layout_marginLeft="12dp"
+            android:layout_marginRight="12dp"
             android:background="@drawable/bg_banner"
+            android:elevation="12dp"
             android:orientation="vertical"
             android:padding="14dp"
             android:visibility="gone">
@@ -217,261 +659,71 @@
                     android:textSize="16sp" />
             </LinearLayout>
         </LinearLayout>
+    </FrameLayout>
 
-        <!-- Volumen · Inicio/Menú/Atrás · Canal -->
+    <!-- Barra inferior -->
+    <FrameLayout
+        android:id="@+id/nav"
+        android:layout_width="match_parent"
+        android:layout_height="66dp"
+        android:background="@color/bg">
+
+        <View
+            android:id="@+id/navPill"
+            android:layout_width="64dp"
+            android:layout_height="32dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_nav_pill" />
+
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_height="match_parent"
             android:orientation="horizontal">
 
-            <FrameLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1">
-
-                <LinearLayout
-                    android:layout_width="72dp"
-                    android:layout_height="200dp"
-                    android:layout_gravity="center"
-                    android:background="@drawable/bg_pill"
-                    android:orientation="vertical">
-
-                    <ImageButton
-                        android:id="@+id/btnVolUp"
-                        style="@style/PillBtn"
-                        android:contentDescription="@string/d_vol_up"
-                        android:src="@drawable/ic_plus" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:text="@string/volume"
-                        android:textColor="@color/ink"
-                        android:textSize="13sp" />
-
-                    <ImageButton
-                        android:id="@+id/btnVolDn"
-                        style="@style/PillBtn"
-                        android:contentDescription="@string/d_vol_dn"
-                        android:src="@drawable/ic_minus" />
-                </LinearLayout>
-            </FrameLayout>
-
             <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="200dp"
-                android:gravity="center"
-                android:orientation="vertical">
+                android:id="@+id/navControl"
+                style="@style/NavItem">
 
-                <ImageButton
-                    android:id="@+id/btnHome"
-                    style="@style/RoundBtn"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:contentDescription="@string/d_home"
-                    android:src="@drawable/ic_home" />
+                <ImageView
+                    android:id="@+id/navControlIcon"
+                    style="@style/NavIcon"
+                    android:src="@drawable/ic_remote" />
 
-                <ImageButton
-                    android:id="@+id/btnMenu"
-                    style="@style/RoundBtn"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginTop="10dp"
-                    android:contentDescription="@string/d_menu"
-                    android:src="@drawable/ic_menu" />
-
-                <ImageButton
-                    android:id="@+id/btnBack"
-                    style="@style/RoundBtn"
-                    android:layout_width="56dp"
-                    android:layout_height="56dp"
-                    android:layout_marginTop="10dp"
-                    android:contentDescription="@string/d_back"
-                    android:src="@drawable/ic_back" />
+                <TextView
+                    android:id="@+id/navControlText"
+                    style="@style/NavText"
+                    android:text="Control" />
             </LinearLayout>
 
-            <FrameLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1">
-
-                <LinearLayout
-                    android:layout_width="72dp"
-                    android:layout_height="200dp"
-                    android:layout_gravity="center"
-                    android:background="@drawable/bg_pill"
-                    android:orientation="vertical">
-
-                    <ImageButton
-                        android:id="@+id/btnChUp"
-                        style="@style/PillBtn"
-                        android:contentDescription="@string/d_ch_up"
-                        android:src="@drawable/ic_up" />
-
-                    <TextView
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:gravity="center"
-                        android:text="@string/channel"
-                        android:textColor="@color/ink"
-                        android:textSize="13sp" />
-
-                    <ImageButton
-                        android:id="@+id/btnChDn"
-                        style="@style/PillBtn"
-                        android:contentDescription="@string/d_ch_dn"
-                        android:src="@drawable/ic_down" />
-                </LinearLayout>
-            </FrameLayout>
-        </LinearLayout>
-
-        <!-- Pestañas -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="22dp"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/tabPad"
-                style="@style/Tab"
-                android:text="@string/tab_pad" />
-
-            <TextView
-                android:id="@+id/tabArrows"
-                style="@style/Tab"
-                android:text="@string/tab_arrows" />
-
-            <TextView
-                android:id="@+id/tabNumbers"
-                style="@style/Tab"
-                android:text="@string/tab_numbers" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="3dp"
-            android:orientation="horizontal">
-
-            <View
-                android:id="@+id/tabLine0"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginLeft="28dp"
-                android:layout_marginRight="28dp"
-                android:layout_weight="1"
-                android:background="@drawable/tab_line" />
-
-            <View
-                android:id="@+id/tabLine1"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginLeft="28dp"
-                android:layout_marginRight="28dp"
-                android:layout_weight="1"
-                android:background="@drawable/tab_line" />
-
-            <View
-                android:id="@+id/tabLine2"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_marginLeft="28dp"
-                android:layout_marginRight="28dp"
-                android:layout_weight="1"
-                android:background="@drawable/tab_line" />
-        </LinearLayout>
-
-        <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="320dp"
-            android:layout_marginTop="16dp">
-
-            <!-- Panel táctil -->
-            <com.jonaalex.controluniversal.TouchpadView
-                android:id="@+id/touchpad"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent" />
-
-            <!-- Cruceta -->
-            <FrameLayout
-                android:id="@+id/dpad"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone">
-
-                <RelativeLayout
-                    android:layout_width="290dp"
-                    android:layout_height="290dp"
-                    android:layout_gravity="center"
-                    android:background="@drawable/bg_ring">
-
-                    <ImageButton
-                        android:id="@+id/btnUp"
-                        android:layout_width="96dp"
-                        android:layout_height="88dp"
-                        android:layout_alignParentTop="true"
-                        android:layout_centerHorizontal="true"
-                        android:background="?android:attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/d_up"
-                        android:src="@drawable/ic_up"
-                        android:tint="@color/ink" />
-
-                    <ImageButton
-                        android:id="@+id/btnDown"
-                        android:layout_width="96dp"
-                        android:layout_height="88dp"
-                        android:layout_alignParentBottom="true"
-                        android:layout_centerHorizontal="true"
-                        android:background="?android:attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/d_down"
-                        android:src="@drawable/ic_down"
-                        android:tint="@color/ink" />
-
-                    <ImageButton
-                        android:id="@+id/btnLeft"
-                        android:layout_width="88dp"
-                        android:layout_height="96dp"
-                        android:layout_alignParentLeft="true"
-                        android:layout_centerVertical="true"
-                        android:background="?android:attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/d_left"
-                        android:src="@drawable/ic_left"
-                        android:tint="@color/ink" />
-
-                    <ImageButton
-                        android:id="@+id/btnRight"
-                        android:layout_width="88dp"
-                        android:layout_height="96dp"
-                        android:layout_alignParentRight="true"
-                        android:layout_centerVertical="true"
-                        android:background="?android:attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="@string/d_right"
-                        android:src="@drawable/ic_right"
-                        android:tint="@color/ink" />
-
-                    <Button
-                        android:id="@+id/btnOk"
-                        android:layout_width="104dp"
-                        android:layout_height="104dp"
-                        android:layout_centerInParent="true"
-                        android:background="@drawable/bg_ok"
-                        android:stateListAnimator="@null"
-                        android:text="@string/ok"
-                        android:textColor="@color/ink"
-                        android:textSize="20sp" />
-                </RelativeLayout>
-            </FrameLayout>
-
-            <!-- Números -->
             <LinearLayout
-                android:id="@+id/numbers"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:gravity="center"
-                android:orientation="vertical"
-                android:visibility="gone" />
-        </FrameLayout>
-    </LinearLayout>
-</ScrollView>
+                android:id="@+id/navMouse"
+                style="@style/NavItem">
+
+                <ImageView
+                    android:id="@+id/navMouseIcon"
+                    style="@style/NavIcon"
+                    android:src="@drawable/ic_mouse" />
+
+                <TextView
+                    android:id="@+id/navMouseText"
+                    style="@style/NavText"
+                    android:text="Mouse" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/navKeyboard"
+                style="@style/NavItem">
+
+                <ImageView
+                    android:id="@+id/navKeyboardIcon"
+                    style="@style/NavIcon"
+                    android:src="@drawable/ic_keyboard" />
+
+                <TextView
+                    android:id="@+id/navKeyboardText"
+                    style="@style/NavText"
+                    android:text="Teclado" />
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>

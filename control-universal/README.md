@@ -44,22 +44,43 @@ Límites (de Android y de las TVs, no de la app):
 - Ninguna app puede conectar la TV a tu red WiFi: eso se configura una vez en la TV.
 - Algunas TVs (LG, Samsung) preguntan «¿Permitir conexión?» la primera vez: acepta con el control.
 
-## Panel táctil
+## Secciones (sin scroll)
 
-La pestaña **Panel táctil** funciona como el touchpad de un mouse para moverte por los menús:
+La app ocupa una sola pantalla y se divide en tres secciones con una barra inferior animada:
 
-| Gesto | Acción en la TV |
+- **Control**: Proyectar, Encender, Entrada, Silencio, Volumen, Canal, Inicio/Menú/Atrás y abajo una
+  cruceta (mantener presionado repite) o el teclado numérico.
+- **Mouse**: panel táctil grande, botones de clic, Atrás/Inicio, volumen y velocidad del cursor.
+- **Teclado**: escribe y el texto aparece en la TV al instante (o activa «Enviar» para mandarlo todo junto).
+
+## Bluetooth: mouse y teclado de verdad
+
+Por Bluetooth el celular se presenta ante la TV como un **mouse + teclado inalámbrico** (perfil HID,
+Android 9+). Así aparece un **cursor real** en la TV y puedes escribir en buscadores, YouTube, etc.
+
+Emparejar (una sola vez): toca **Bluetooth** (arriba a la derecha) › *Emparejar una TV nueva* ›
+*Hacer visible*. En la TV: *Ajustes › Control remoto y accesorios › Agregar accesorio* (o
+*Ajustes › Bluetooth*) y elige tu celular. Después se reconecta solo al abrir la app.
+
+| Gesto en el panel (con Bluetooth) | Acción |
 | --- | --- |
-| Deslizar el dedo | Flechas (una por cada tramo recorrido: arrastre largo = varios pasos) |
-| Tocar | OK |
-| Mantener presionado | Atrás |
+| Mover un dedo | Mueve el cursor (con aceleración: lento = preciso, rápido = cruza la pantalla) |
+| Tocar | Clic |
+| Tocar con dos dedos | Clic derecho (en Android TV suele ser «Atrás») |
+| Arrastrar con dos dedos / franja derecha | Desplazar (rueda) |
+| Mantener presionado y mover | Arrastrar |
 
-> Nota: por infrarrojo **no existe un cursor libre** tipo mouse; eso solo lo hacen controles
-> Bluetooth/WiFi (como el Magic Remote de LG). Por eso el panel traduce tus gestos a flechas y OK,
-> que funcionan en cualquier TV.
+Con Bluetooth conectado, flechas, OK, Atrás, Inicio, Menú y volumen se envían por Bluetooth (no hace
+falta apuntar). Encender, Entrada, Canales y números siguen por infrarrojo.
 
-También hay pestañas con **cruceta** (flechas + OK) y **teclado numérico**, más Volumen, Canal,
-Silencio, Entrada, Inicio, Menú y Atrás.
+Sin Bluetooth, el panel funciona por infrarrojo: deslizar = flechas, tocar = OK, mantener = Atrás.
+
+Requisitos y límites:
+- La TV debe aceptar mouse/teclado Bluetooth: Android TV / Google TV (TCL, Hisense, Sony, Xiaomi…),
+  Samsung y LG recientes. Roku y las TVs sin Bluetooth no lo aceptan.
+- El celular necesita Android 9 o superior con el perfil HID activado (la mayoría lo tiene; si no,
+  la app lo avisa).
+- El teclado usa distribución en inglés: los acentos se envían sin tilde (á → a, ñ → n).
 
 ## Marcas incluidas
 
